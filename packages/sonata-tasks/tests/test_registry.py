@@ -54,6 +54,16 @@ def test_registry_resource_creates_and_removes_only_its_container() -> None:
         ("docker", "run"),
         ("docker", "rm"),
     ]
+    # The registry image declares `VOLUME /var/lib/registry`, so the container
+    # docker ran carries an anonymous volume holding every layer pushed to it.
+    # Removing the container without `-v` is what leaves that volume dangling.
+    assert executor.seen[-1].argv == (
+        "docker",
+        "rm",
+        "--force",
+        "-v",
+        "example-registry",
+    )
 
 
 def test_registry_starts_and_stops_a_preexisting_stopped_container() -> None:
@@ -69,6 +79,9 @@ def test_registry_starts_and_stops_a_preexisting_stopped_container() -> None:
 
     assert state == "started"
     assert [task.argv[1] for task in executor.seen] == ["inspect", "start", "stop"]
+    # Whatever this registry holds predates the run, so stopping is the whole
+    # job: nothing here may remove it, or its data.
+    assert all("rm" not in task.argv for task in executor.seen)
 
 
 def test_registry_leaves_a_running_preexisting_container_untouched() -> None:

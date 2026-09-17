@@ -72,6 +72,41 @@ def test_buildx_builder_creates_bootstraps_and_removes() -> None:
     ]
 
 
+def test_buildx_builder_passes_driver_options_to_the_create() -> None:
+    """A builder that must reach a registry on the host's loopback needs these.
+
+    A `docker-container` builder runs buildkitd in a container of its own, so
+    its `localhost` is itself and a push to a registry published on the host's
+    loopback cannot resolve. `network=host` is the option that makes it work,
+    and it is a `--driver-opt` given at creation -- a `buildkitd_config` with
+    `[worker.oci] networkMode = "host"` was measured not to substitute, because
+    that governs the network of build steps rather than the daemon that pushes.
+    """
+    executor = RecordingExecutor(builder_exists=False)
+    resource = buildx_builder_resource(
+        name="release-builder",
+        executor=executor,
+        role="stack",
+        driver_options=("network=host",),
+    )
+
+    resource.acquire(TaskInputs.empty())
+
+    create = next(tuple(s.argv) for s in executor.seen if "create" in s.argv)
+    assert create == (
+        "docker",
+        "buildx",
+        "create",
+        "--name",
+        "release-builder",
+        "--driver",
+        "docker-container",
+        "--driver-opt",
+        "network=host",
+        "--use",
+    )
+
+
 def test_buildx_builder_preexisting_is_not_removed() -> None:
     executor = RecordingExecutor(builder_exists=True)
     resource = buildx_builder_resource(
