@@ -103,7 +103,8 @@ def docker_registry_resource(
     and published on ``port``. It then polls ``ready`` (defaulting to the
     registry's ``/v2/`` endpoint) until it answers, or fails. The returned state
     tells the release apart: only containers this resource started or created
-    are stopped or removed again.
+    are stopped or removed again, and a container it created is removed with its
+    data -- see ``release``.
 
     Raises:
         ValueError: If ``container`` is empty or ``readiness_attempts`` is below
@@ -132,7 +133,21 @@ def docker_registry_resource(
 
     def release(inputs: TaskInputs, state: RegistryState) -> None:
         if state == "created":
-            _ = run(inputs, "rm", "--force", container, expected=frozenset({0, 1}))
+            # `-v` removes the anonymous volumes attached to this container, and
+            # the registry image declares `VOLUME /var/lib/registry`, so docker
+            # gave it one holding every layer the run pushed. Removing the
+            # container without it leaves that volume behind: one per run,
+            # invisible to the next run because it gets a fresh one, and never
+            # reclaimed by anything. Only this container's volumes go; a
+            # registry this resource merely started keeps the data it had.
+            _ = run(
+                inputs,
+                "rm",
+                "--force",
+                "-v",
+                container,
+                expected=frozenset({0, 1}),
+            )
         elif state == "started":
             _ = run(inputs, "stop", container)
 

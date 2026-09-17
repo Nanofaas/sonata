@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from typing import Any
 
@@ -33,10 +33,16 @@ def _run(
     return outcome.value
 
 
-def _create_argv(name: str, buildkitd_config: str | None) -> tuple[str, ...]:
+def _create_argv(
+    name: str,
+    buildkitd_config: str | None,
+    driver_options: Sequence[str],
+) -> tuple[str, ...]:
     argv = ["create", "--name", name, "--driver", "docker-container"]
     if buildkitd_config is not None:
         argv.extend(("--buildkitd-config", buildkitd_config))
+    for option in driver_options:
+        argv.extend(("--driver-opt", option))
     argv.append("--use")
     return tuple(argv)
 
@@ -54,6 +60,13 @@ def buildx_builder_resource(
     options: CommandOptions | None = None,
     requires: tuple[Resource[Any], ...] = (),
     buildkitd_config: str | None = None,
+    # Driver options the created builder gets, as `--driver-opt` arguments. A
+    # `docker-container` builder runs buildkitd in a container of its own, so
+    # its `localhost` is itself: reaching a registry on the host's loopback
+    # needs `network=host` here, and buildkitd's own `[worker.oci] networkMode`
+    # does not substitute, because that governs the network of build steps
+    # rather than the daemon that pushes.
+    driver_options: Sequence[str] = (),
     validate: Callable[[str], None] | None = None,
     validation_key: str | None = None,
     replace_existing: bool = False,
@@ -62,10 +75,10 @@ def buildx_builder_resource(
 
     Acquiring inspects the builder. A missing one — or one that
     ``replace_existing`` asks to redo, which is removed first — is created as a
-    ``docker-container`` builder with ``--use``, bootstrapped, and checked
-    through ``validate``. Acquiring returns the builder name for a builder this
-    resource created, or ``"existing"`` when it left a pre-existing builder
-    untouched; releasing removes only the former.
+    ``docker-container`` builder with ``--use`` and any ``driver_options``,
+    bootstrapped, and checked through ``validate``. Acquiring returns the builder
+    name for a builder this resource created, or ``"existing"`` when it left a
+    pre-existing builder untouched; releasing removes only the former.
 
     Raises:
         ValueError: If ``validate`` is configured without a ``validation_key``.
@@ -81,7 +94,11 @@ def buildx_builder_resource(
     def bootstrap(inputs: TaskInputs) -> None:
         try:
             _ = _run(
-                inputs, executor, role, current, *_create_argv(name, buildkitd_config)
+                inputs,
+                executor,
+                role,
+                current,
+                *_create_argv(name, buildkitd_config, driver_options),
             )
             result = _run(
                 inputs, executor, role, current, "inspect", "--bootstrap", name
