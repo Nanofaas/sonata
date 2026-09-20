@@ -37,9 +37,19 @@ jobs:
       - name: Check the tag matches the built version
         run: |
           tag="${GITHUB_REF_NAME#v}"
-          artifact="$(basename "$(ls dist/sonata_engine-*.whl)")"
+          # Globs every wheel rather than "<name>-*.whl". The wheel is named after
+          # the distribution, not the module, and for azure-vm-sdk the two differ
+          # (`azure_vm_sdk` against `azure_vm`), so a module-based glob matched
+          # nothing and failed the build. One package per repository, so one wheel.
+          wheels=(dist/*.whl)
+          if [ "${#wheels[@]}" -ne 1 ]; then
+            echo "expected exactly one wheel in dist/, found ${#wheels[@]}" >&2
+            ls -la dist/ >&2
+            exit 1
+          fi
+          artifact="$(basename "${wheels[0]}")"
           case "$artifact" in
-            "sonata_engine-$tag-"*) echo "tag $GITHUB_REF_NAME matches $artifact" ;;
+            *"-$tag-"*) echo "tag $GITHUB_REF_NAME matches $artifact" ;;
             *)
               echo "tag $GITHUB_REF_NAME does not match the built $artifact" >&2
               exit 1
