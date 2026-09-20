@@ -210,7 +210,14 @@ class MultipassVmProvider:
     def teardown(
         self, request: VmRequest, *, dry_run: bool = False
     ) -> ShellExecutionResult:
-        """Delete the VM, leaving external-lifecycle VMs untouched.
+        """Delete the VM permanently, leaving external-lifecycle VMs untouched.
+
+        ``multipass delete`` without ``--purge`` only marks the instance as
+        deleted: it stays in ``multipass list`` and keeps its disk until a purge,
+        which is why asking for a plain delete here reported success while the
+        VM was still on the host. ``--purge`` on the delete targets this instance
+        only -- the system-wide ``multipass purge`` would take every soft-deleted
+        instance with it, including ones another caller deleted to recover.
 
         A dry run returns the multipass delete command without contacting
         Multipass. SDK errors are returned as a failed result rather than
@@ -221,14 +228,15 @@ class MultipassVmProvider:
                 ["echo", "Skipping teardown for external VM lifecycle"], dry_run=dry_run
             )
         name = self._vm_name(request)
+        delete_cmd = ["multipass", "delete", "--purge", name]
         if dry_run:
-            return successful_result(["multipass", "delete", name])
+            return successful_result(delete_cmd)
         try:
-            self._client.get_vm(name).delete()
+            self._client.get_vm(name).delete(purge=True)
         except (VmNotFoundError, MultipassCommandError) as e:
             if isinstance(e, MultipassCommandError):
                 return _sdk_error(e)
-        return successful_result(["multipass", "delete", name])
+        return successful_result(delete_cmd)
 
     def inspect(
         self, request: VmRequest, *, dry_run: bool = False
