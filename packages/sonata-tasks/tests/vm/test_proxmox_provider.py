@@ -47,7 +47,7 @@ def _mock_ssh_nat_rule(
     host_port: int = 20000,
     vm_ip: str = "192.168.1.100",
 ) -> MagicMock:
-    from proxmox_sdk.routing import PortMapping
+    from proxmox_vm_sdk.routing import PortMapping
 
     mgr_mock = MagicMock()
     mgr_mock.list_rules.return_value = [
@@ -145,7 +145,7 @@ def test_ssh_endpoint_republishes_when_cached_nat_rule_is_missing(
     mock_client_cls,
     mock_routing_cls,
 ) -> None:
-    from proxmox_sdk.routing import PortMapping
+    from proxmox_vm_sdk.routing import PortMapping
 
     client_mock, vm_mock = _make_proxmox_client_mock()
     vm_mock.vm_id = 123
@@ -188,7 +188,7 @@ def test_ssh_endpoint_republishes_when_nat_rule_targets_stale_guest_ip(
     mock_client_cls,
     mock_routing_cls,
 ) -> None:
-    from proxmox_sdk.routing import PortMapping
+    from proxmox_vm_sdk.routing import PortMapping
 
     client_mock, vm_mock = _make_proxmox_client_mock()
     vm_mock.vm_id = 123
@@ -262,7 +262,7 @@ def test_teardown_success(mock_client_cls) -> None:
 @patch("sonata_tasks.vm.providers.proxmox.ProxmoxRoutingManager")
 @patch("sonata_tasks.vm.providers.proxmox.ProxmoxClient")
 def test_teardown_removes_nat_rules_for_vm(mock_client_cls, mock_routing_cls) -> None:
-    from proxmox_sdk.routing import PortMapping
+    from proxmox_vm_sdk.routing import PortMapping
 
     client_mock, vm_mock = _make_proxmox_client_mock()
     vm_mock.info.return_value.state.value = "stopped"
@@ -331,7 +331,7 @@ def test_teardown_nat_failure_does_not_prevent_success(
 def test_teardown_removes_nat_rules_when_delete_fails(
     mock_client_cls, mock_routing_cls
 ) -> None:
-    from proxmox_sdk.routing import PortMapping
+    from proxmox_vm_sdk.routing import PortMapping
 
     client_mock, vm_mock = _make_proxmox_client_mock()
     vm_mock.info.return_value.state.value = "stopped"
@@ -359,7 +359,7 @@ def test_teardown_removes_nat_rules_when_delete_fails(
 
 @patch("sonata_tasks.vm.providers.proxmox.ProxmoxClient")
 def test_teardown_vm_not_found_is_ignored(mock_client_cls) -> None:
-    from proxmox_sdk.exceptions import VmNotFoundError
+    from proxmox_vm_sdk.exceptions import VmNotFoundError
 
     client_mock, vm_mock = _make_proxmox_client_mock()
     vm_mock.info.return_value.state.value = "stopped"
@@ -378,7 +378,7 @@ def test_teardown_vm_not_found_is_ignored(mock_client_cls) -> None:
 def test_ensure_running(
     mock_client_cls, mock_routing_cls, mock_subproc, mock_socket, tmp_path
 ) -> None:
-    from proxmox_sdk.routing import PortMapping
+    from proxmox_vm_sdk.routing import PortMapping
 
     mock_socket.return_value.__enter__ = MagicMock(return_value=MagicMock())
     mock_socket.return_value.__exit__ = MagicMock(return_value=False)
@@ -436,7 +436,7 @@ def test_ensure_running(
 def test_ensure_running_waits_ready_and_publishes_ssh_nat(
     mock_client_cls, mock_routing_cls, mock_subproc, mock_socket, tmp_path
 ) -> None:
-    from proxmox_sdk.routing import PortMapping
+    from proxmox_vm_sdk.routing import PortMapping
 
     mock_socket.return_value.__enter__ = MagicMock(return_value=MagicMock())
     mock_socket.return_value.__exit__ = MagicMock(return_value=False)
@@ -498,7 +498,7 @@ def test_ensure_running_allows_slow_proxmox_guest_agent(
     mock_socket,
     tmp_path,
 ) -> None:
-    from proxmox_sdk.routing import PortMapping
+    from proxmox_vm_sdk.routing import PortMapping
 
     mock_socket.return_value.__enter__ = MagicMock(return_value=MagicMock())
     mock_socket.return_value.__exit__ = MagicMock(return_value=False)
@@ -551,7 +551,7 @@ def test_ensure_running_passes_configured_ssh_public_key_to_cloud_init(
     mock_socket,
     tmp_path,
 ) -> None:
-    from proxmox_sdk.routing import PortMapping
+    from proxmox_vm_sdk.routing import PortMapping
 
     mock_socket.return_value.__enter__ = MagicMock(return_value=MagicMock())
     mock_socket.return_value.__exit__ = MagicMock(return_value=False)
@@ -773,7 +773,7 @@ def test_transfer_from_no_ssh_key(
 def test_publish_port_returns_runner_facing_endpoint(
     mock_client_cls, mock_routing_cls
 ) -> None:
-    from proxmox_sdk.routing import PortMapping
+    from proxmox_vm_sdk.routing import PortMapping
 
     client_mock, vm_mock = _make_proxmox_client_mock()
     vm_mock.vm_id = 123
@@ -807,7 +807,7 @@ def test_publish_port_republishes_when_nat_rule_targets_stale_guest_ip(
     mock_client_cls,
     mock_routing_cls,
 ) -> None:
-    from proxmox_sdk.routing import PortMapping
+    from proxmox_vm_sdk.routing import PortMapping
 
     client_mock, vm_mock = _make_proxmox_client_mock()
     vm_mock.vm_id = 123

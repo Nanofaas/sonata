@@ -14,15 +14,18 @@ import sonata_engine
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SRC_ROOT = REPO_ROOT / "src" / "sonata_engine"
 
+# Module roots, not distribution names: the check compares the first component of
+# every import, so "azure_vm_sdk" never matched the importable "azure_vm" and
+# "multipass_sdk" never matched "multipass" -- neither protected anything.
 FORBIDDEN = {
     "controlplane_tool",
     "nanofaas",
     "nanolab",
     "sonata_tasks",
     "workflow_tasks",
-    "azure_vm_sdk",
-    "multipass_sdk",
-    "proxmox_sdk",
+    "azure_vm",
+    "multipass_vm_sdk",
+    "proxmox_vm_sdk",
 }
 
 
@@ -61,6 +64,14 @@ def test_no_runtime_dependencies() -> None:
         pyproject = tomllib.load(f)
 
     assert pyproject["project"]["dependencies"] == []
+
+
+def test_dunder_version_matches_the_pyproject() -> None:
+    """The version is written in two places; this is what keeps them equal."""
+    with (REPO_ROOT / "pyproject.toml").open("rb") as f:
+        pyproject = tomllib.load(f)
+
+    assert sonata_engine.__version__ == pyproject["project"]["version"]
 
 
 def test_root_exports_the_v2_contract() -> None:

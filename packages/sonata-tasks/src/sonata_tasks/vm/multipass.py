@@ -11,7 +11,7 @@ try:
         resolve_connection_host,
     )
 except ModuleNotFoundError as error:
-    if error.name in {"multipass", "shellcraft"}:
+    if error.name in {"multipass_vm_sdk", "subprocess_toolkit"}:
         raise ModuleNotFoundError(
             "Install sonata-tasks[multipass] to use MultipassVmProvider"
         ) from error
@@ -20,7 +20,7 @@ except ModuleNotFoundError as error:
 
 def find_ssh_public_key() -> str:
     """Compatibility hook for callers that patch credential discovery."""
-    from multipass import find_ssh_public_key as discover
+    from multipass_vm_sdk import find_ssh_public_key as discover
 
     key = discover()
     if key is None:

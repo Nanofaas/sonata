@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from shellcraft.backend import ShellExecutionResult
+from subprocess_toolkit.backend import ShellExecutionResult
 
 
 def successful_result(command: list[str], *, stdout: str = "") -> ShellExecutionResult:

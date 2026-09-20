@@ -1,18 +1,18 @@
-"""Shell backend: shellcraft re-exports plus a workflow-aware SubprocessShell."""
+"""subprocess-toolkit re-exports plus a workflow-aware SubprocessShell."""
 
 from __future__ import annotations
 
 from typing import override
 
-from shellcraft.backend import (
+from subprocess_toolkit.backend import (
     OutputListener,
     RecordingShell,
     ScriptedShell,
     ShellBackend,
     ShellExecutionResult,
 )
-from shellcraft.backend import (
-    SubprocessShell as _ShellcraftSubprocessShell,
+from subprocess_toolkit.backend import (
+    SubprocessShell as _ToolkitSubprocessShell,
 )
 
 from sonata_engine.workflow.context import has_workflow_sink
@@ -28,7 +28,7 @@ __all__ = [
 ]
 
 
-class SubprocessShell(_ShellcraftSubprocessShell):
+class SubprocessShell(_ToolkitSubprocessShell):
     """SubprocessShell with TUI workflow-log integration.
 
     Routes each output line to workflow_log when a workflow sink is active,

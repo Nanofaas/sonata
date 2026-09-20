@@ -32,11 +32,15 @@ wheels = [
 
 [[package]]
 name = "azure-vm-sdk"
-version = "0.1.0"
-source = { git = "https://github.com/miciav/azure-vm-sdk.git?rev=eb8a54203e36ea48cb37ba26044353ba4afc8259#eb8a54203e36ea48cb37ba26044353ba4afc8259" }
+version = "0.6.0"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "paramiko" },
     { name = "pyyaml" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/57/75/71d6acc4ba54d0085e35646117f1141bd67be3463732879e47ff43d809c9/azure_vm_sdk-0.6.0.tar.gz", hash = "sha256:b22bdaab69cbe8abdd8fba0fa0ad94a3fb37ab796839119ba360048ebd82204c", size = 133810, upload-time = "2026-09-20T13:39:22.146Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/69/04/7ed887c5a268f0c97f6201891c0905d59dcf8dda70a46c012f47860f9cc5/azure_vm_sdk-0.6.0-py3-none-any.whl", hash = "sha256:5c12b8c91ceb3559e3d74b2006c75222f14e6ab1ef25d96c28d450d28abce0c8", size = 34154, upload-time = "2026-09-20T13:39:20.609Z" },
 ]
 
 [[package]]
@@ -720,12 +724,16 @@ wheels = [
 ]
 
 [[package]]
-name = "multipass-sdk"
+name = "multipass-vm-sdk"
 version = "0.6.0"
-source = { git = "https://github.com/miciav/multipass-sdk.git?rev=402c4061e6b32cc6dda5e7a9876fa7cefd6f9ae1#402c4061e6b32cc6dda5e7a9876fa7cefd6f9ae1" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "haikunator" },
     { name = "pyyaml" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0f/a4/f1f7539c62ef55015b8ab1c1a043cce62f57ab023974156e9ced9d91d0bb/multipass_vm_sdk-0.6.0.tar.gz", hash = "sha256:9195fa1d9a9aabf4adfce89ce2e07fef264485dd104afe5c04a633e76397eabd", size = 67785, upload-time = "2026-09-20T13:40:43.829Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0f/7f/865c30de3878a8239d10e475102ea4d307f15060447f647053ac6b4392be/multipass_vm_sdk-0.6.0-py3-none-any.whl", hash = "sha256:0ba64a7ed4fccbcdef2456f27ca0d546a162d1017eb48d806c8c762e62664f34", size = 22696, upload-time = "2026-09-20T13:40:42.674Z" },
 ]
 
 [[package]]
@@ -812,13 +820,17 @@ wheels = [
 ]
 
 [[package]]
-name = "proxmox-sdk"
-version = "0.2.0"
-source = { git = "https://github.com/miciav/proxmox-sdk.git?rev=b82c68c3ed5ecfdb9b90c047bb43df4749dd9817#b82c68c3ed5ecfdb9b90c047bb43df4749dd9817" }
+name = "proxmox-vm-sdk"
+version = "0.6.0"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "paramiko" },
     { name = "proxmoxer" },
     { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/be/44/b34c240ed28ac567be211914a0e20b7d6a0c2cc406b26a0584fca4f55f64/proxmox_vm_sdk-0.6.0.tar.gz", hash = "sha256:c437789f2092924968337f1a1ed7c660781941f6145570f69048e25d9d90f5f5", size = 156711, upload-time = "2026-09-20T13:36:59.289Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/92/55/8a418272d5eb92a4e07f60cc4b7e9e394f52d6a48fcb450e6d514c97324a/proxmox_vm_sdk-0.6.0-py3-none-any.whl", hash = "sha256:a6cefc7625d8c9f85fe90b582dae31362ddf3c39d87c58a25787e073f1c363aa", size = 39375, upload-time = "2026-09-20T13:36:57.961Z" },
 ]
 
 [[package]]
@@ -1115,13 +1127,8 @@ wheels = [
 ]
 
 [[package]]
-name = "shellcraft"
-version = "0.1.0"
-source = { git = "https://github.com/miciav/shellcraft.git?rev=9f2726ac31ab5bdcbf9a378f1cc4d99bdb5090c0#9f2726ac31ab5bdcbf9a378f1cc4d99bdb5090c0" }
-
-[[package]]
 name = "sonata-engine"
-version = "0.6.0"
+version = "0.6.1"
 source = { editable = "." }
 
 [package.dev-dependencies]
@@ -1148,7 +1155,7 @@ dev = [
 
 [[package]]
 name = "sonata-tasks"
-version = "0.6.0"
+version = "0.6.1"
 source = { editable = "packages/sonata-tasks" }
 dependencies = [
     { name = "sonata-engine" },
@@ -1158,23 +1165,23 @@ dependencies = [
 azure = [
     { name = "azure-vm-sdk" },
     { name = "pydantic" },
-    { name = "shellcraft" },
+    { name = "subprocess-toolkit" },
 ]
 multipass = [
-    { name = "multipass-sdk" },
+    { name = "multipass-vm-sdk" },
     { name = "pydantic" },
-    { name = "shellcraft" },
+    { name = "subprocess-toolkit" },
 ]
 prometheus = [
     { name = "httpx" },
 ]
 proxmox = [
-    { name = "proxmox-sdk" },
+    { name = "proxmox-vm-sdk" },
     { name = "pydantic" },
-    { name = "shellcraft" },
+    { name = "subprocess-toolkit" },
 ]
 shell = [
-    { name = "shellcraft" },
+    { name = "subprocess-toolkit" },
 ]
 
 [package.dev-dependencies]
@@ -1192,18 +1199,18 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "azure-vm-sdk", marker = "extra == 'azure'", git = "https://github.com/miciav/azure-vm-sdk.git?rev=eb8a54203e36ea48cb37ba26044353ba4afc8259" },
+    { name = "azure-vm-sdk", marker = "extra == 'azure'", specifier = "==0.6.0" },
     { name = "httpx", marker = "extra == 'prometheus'", specifier = ">=0.27" },
-    { name = "multipass-sdk", marker = "extra == 'multipass'", git = "https://github.com/miciav/multipass-sdk.git?rev=402c4061e6b32cc6dda5e7a9876fa7cefd6f9ae1" },
-    { name = "proxmox-sdk", marker = "extra == 'proxmox'", git = "https://github.com/miciav/proxmox-sdk.git?rev=b82c68c3ed5ecfdb9b90c047bb43df4749dd9817" },
+    { name = "multipass-vm-sdk", marker = "extra == 'multipass'", specifier = "==0.6.0" },
+    { name = "proxmox-vm-sdk", marker = "extra == 'proxmox'", specifier = "==0.6.0" },
     { name = "pydantic", marker = "extra == 'azure'", specifier = ">=2.9.2" },
     { name = "pydantic", marker = "extra == 'multipass'", specifier = ">=2.9.2" },
     { name = "pydantic", marker = "extra == 'proxmox'", specifier = ">=2.9.2" },
-    { name = "shellcraft", marker = "extra == 'azure'", git = "https://github.com/miciav/shellcraft.git?rev=9f2726ac31ab5bdcbf9a378f1cc4d99bdb5090c0" },
-    { name = "shellcraft", marker = "extra == 'multipass'", git = "https://github.com/miciav/shellcraft.git?rev=9f2726ac31ab5bdcbf9a378f1cc4d99bdb5090c0" },
-    { name = "shellcraft", marker = "extra == 'proxmox'", git = "https://github.com/miciav/shellcraft.git?rev=9f2726ac31ab5bdcbf9a378f1cc4d99bdb5090c0" },
-    { name = "shellcraft", marker = "extra == 'shell'", git = "https://github.com/miciav/shellcraft.git?rev=9f2726ac31ab5bdcbf9a378f1cc4d99bdb5090c0" },
     { name = "sonata-engine", editable = "." },
+    { name = "subprocess-toolkit", marker = "extra == 'azure'", specifier = "==0.6.0" },
+    { name = "subprocess-toolkit", marker = "extra == 'multipass'", specifier = "==0.6.0" },
+    { name = "subprocess-toolkit", marker = "extra == 'proxmox'", specifier = "==0.6.0" },
+    { name = "subprocess-toolkit", marker = "extra == 'shell'", specifier = "==0.6.0" },
 ]
 provides-extras = ["shell", "prometheus", "multipass", "azure", "proxmox"]
 
@@ -1227,6 +1234,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/db/a1/3b8ed9c1fc3aa6eebb57732d924ddaa0500ecc3b638d0454816320994383/stevedore-5.9.1.tar.gz", hash = "sha256:e97a2667923efda926e8713fde6a73616df68210a3cbc6f02b48967b676fd8bf", size = 518111, upload-time = "2026-08-20T15:25:14.754Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c5/97/bba6e7ec2f5498b9dcb7b1b6400086b80ae5a8ebaff4b25e8c8add75f439/stevedore-5.9.1-py3-none-any.whl", hash = "sha256:5c8ff3a9f336cc1a06ac0f597bc79d11a2f950bfd32e290ca56b5a301fafafbf", size = 54931, upload-time = "2026-08-20T15:25:13.602Z" },
+]
+
+[[package]]
+name = "subprocess-toolkit"
+version = "0.6.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/46/80/c57a2e28fad85ae1e9b64278c941749ecbbee8901eb884ec16f50e500ce2/subprocess_toolkit-0.6.0.tar.gz", hash = "sha256:ee461bd76034781105cfcfceaf72ed59f54c9fc50a83b0d174c0d270e0482a16", size = 18669, upload-time = "2026-09-20T13:37:01.917Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/98/f2/2d4367ea1af959dbebec5263f20ae1cbf0891d680fc0ca0d3c0c61988c3e/subprocess_toolkit-0.6.0-py3-none-any.whl", hash = "sha256:cf28a13d68ab6b184e46ca6ff3cee56e675ea2b4dbd3d99b2df05f2676187d7b", size = 11179, upload-time = "2026-09-20T13:37:00.789Z" },
 ]
 
 [[package]]
