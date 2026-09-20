@@ -1128,7 +1128,7 @@ wheels = [
 
 [[package]]
 name = "sonata-engine"
-version = "0.6.1"
+version = "0.6.2"
 source = { editable = "." }
 
 [package.dev-dependencies]
@@ -1155,7 +1155,7 @@ dev = [
 
 [[package]]
 name = "sonata-tasks"
-version = "0.6.1"
+version = "0.6.2"
 source = { editable = "packages/sonata-tasks" }
 dependencies = [
     { name = "sonata-engine" },

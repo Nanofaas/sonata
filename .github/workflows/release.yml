@@ -11,16 +11,18 @@ permissions:
   contents: read
 
 jobs:
-  publish:
-    # Two distributions ship from this repository and are released together, so
-    # one tag publishes both. Each has its own trusted publisher on PyPI, and
-    # both point at this workflow and this environment.
-    name: Build and publish ${{ matrix.package }}
+  # Two distributions ship from this repository and are released together, so
+  # one tag publishes both. Each has its own trusted publisher on PyPI, and
+  # both point at this workflow and this environment.
+  #
+  # They are two jobs rather than one matrix on purpose. `sonata-tasks` pins
+  # `sonata-engine` at the same version, so an upload of tasks that survives a
+  # failed upload of engine leaves a distribution on PyPI that cannot be
+  # installed -- and the version number is spent. A matrix runs its legs
+  # concurrently and cannot express that dependency; `needs` can.
+  engine:
+    name: Build and publish sonata-engine
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        package: [sonata-engine, sonata-tasks]
     # Must match the environment registered as each project's trusted publisher
     # on PyPI, along with owner, repository and this filename.
     environment: pypi
@@ -38,32 +40,37 @@ jobs:
 
       # One package per job, on its own runner, so dist/ holds exactly one
       # wheel and the guard below can rely on that.
-      - name: Build ${{ matrix.package }}
-        run: uv build --package ${{ matrix.package }} --out-dir dist
+      - name: Build sonata-engine
+        run: uv build --package sonata-engine --out-dir dist
 
-      # The check that matters: uploading 0.7.0 under the tag v0.6.0 would burn
-      # the 0.7.0 version number permanently.
       - name: Check the tag matches the built version
-        run: |
-          tag="${GITHUB_REF_NAME#v}"
-          # Globs every wheel rather than "<name>-*.whl": the wheel is named
-          # after the distribution, and a module-based glob matched nothing in a
-          # sibling repository, failing that build before its upload could even
-          # start. This no longer guesses a name.
-          wheels=(dist/*.whl)
-          if [ "${#wheels[@]}" -ne 1 ]; then
-            echo "expected exactly one wheel in dist/, found ${#wheels[@]}" >&2
-            ls -la dist/ >&2
-            exit 1
-          fi
-          artifact="$(basename "${wheels[0]}")"
-          case "$artifact" in
-            *"-$tag-"*) echo "tag $GITHUB_REF_NAME matches $artifact" ;;
-            *)
-              echo "tag $GITHUB_REF_NAME does not match the built $artifact" >&2
-              exit 1
-              ;;
-          esac
+        uses: ./.github/actions/check-release-tag
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          packages-dir: dist/
+
+  tasks:
+    name: Build and publish sonata-tasks
+    needs: engine
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Build sonata-tasks
+        run: uv build --package sonata-tasks --out-dir dist
+
+      - name: Check the tag matches the built version
+        uses: ./.github/actions/check-release-tag
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
