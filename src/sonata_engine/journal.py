@@ -1,12 +1,20 @@
-"""Optional append-only JSON Lines journal (schema v2) and resume-decision logic.
+"""Optional append-only JSON Lines journal and resume-decision logic.
 
 The journal records the lifecycle of a compiled workflow so an interrupted run can
 resume. Storage is one JSON object per line; a single logical task (`task_id`) can
 own several physical attempt records. Recovery truncates only a malformed,
-non-newline-terminated final record left by an interrupted append. Schema v2
-stores only generic workflow/task/attempt/evidence data -- no release identity,
-semantic versions, registries, or artifact policy (those do not belong in
-Sonata).
+non-newline-terminated final record left by an interrupted append.
+
+Each record carries `schema_version` and is read only at the value `SCHEMA_VERSION`
+declares; anything else raises `UnsupportedJournalSchemaError` rather than being
+migrated or silently accepted. The generation is named in that one place on
+purpose: this docstring used to call it "schema v2" and went on doing so long
+after the constant had moved to 3, because a version written down twice drifts.
+
+The records hold generic workflow/task/attempt/evidence data plus one record per
+retained resource, naming the resource, its retention order and its acquired
+value for `release_retained` to read back. Release identity, semantic versions,
+registries and artifact policy stay out: those do not belong in Sonata.
 """
 
 from __future__ import annotations
