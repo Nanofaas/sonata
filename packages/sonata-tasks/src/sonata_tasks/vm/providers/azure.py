@@ -13,7 +13,7 @@ from typing import Any
 
 from azure_vm import AzureClient, AzureVM
 from azure_vm.exceptions import VmNotFoundError
-from shellcraft.backend import ShellExecutionResult
+from subprocess_toolkit.backend import ShellExecutionResult
 
 from sonata_tasks.vm.models import VmRequest, vm_remote_home
 from sonata_tasks.vm.results import successful_result

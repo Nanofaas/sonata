@@ -92,7 +92,7 @@ def test_resolve_connection_host_with_ipv4() -> None:
 
 
 def test_resolve_connection_host_vm_not_found_raises() -> None:
-    from multipass import VmNotFoundError
+    from multipass_vm_sdk import VmNotFoundError
 
     client = MagicMock()
     client.get_vm.return_value.info.side_effect = VmNotFoundError("not found")
@@ -180,7 +180,7 @@ def test_teardown_multipass_calls_delete() -> None:
 
 
 def test_teardown_multipass_command_error() -> None:
-    from multipass import MultipassCommandError
+    from multipass_vm_sdk import MultipassCommandError
 
     provider, _shell, client = _make_provider()
     err = MultipassCommandError(
@@ -193,7 +193,7 @@ def test_teardown_multipass_command_error() -> None:
 
 
 def test_teardown_multipass_vm_not_found() -> None:
-    from multipass import VmNotFoundError
+    from multipass_vm_sdk import VmNotFoundError
 
     provider, _shell, client = _make_provider()
     client.get_vm.return_value.delete.side_effect = VmNotFoundError("gone")
@@ -231,7 +231,7 @@ def test_inspect_multipass_success() -> None:
 
 
 def test_inspect_multipass_command_error() -> None:
-    from multipass import MultipassCommandError
+    from multipass_vm_sdk import MultipassCommandError
 
     provider, _shell, client = _make_provider()
     err = MultipassCommandError(

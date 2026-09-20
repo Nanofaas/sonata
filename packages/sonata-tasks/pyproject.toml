@@ -4,30 +4,50 @@ license = "MIT"
 license-files = ["LICENSE"]
 version = "0.6.0"
 description = "Reusable task catalogue for the Sonata workflow engine"
+readme = "README.md"
 requires-python = ">=3.12"
-dependencies = [
-    "sonata-engine @ git+https://github.com/miciav/sonata.git@f26a560efb43e0b00e6b6dca9f2aa035f1a7a174",
+authors = [
+    { name = "miciav", email = "5889596+miciav@users.noreply.github.com" }
 ]
+keywords = ["workflow", "tasks", "catalogue", "orchestration", "devops"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Distributed Computing",
+]
+dependencies = [
+    "sonata-engine==0.6.0",
+]
+
+# PyPI shows a package page with no link home at all without these.
+[project.urls]
+Homepage = "https://github.com/Nanofaas/sonata"
+Repository = "https://github.com/Nanofaas/sonata"
+Issues = "https://github.com/Nanofaas/sonata/issues"
 
 [project.optional-dependencies]
 shell = [
-    "shellcraft @ git+https://github.com/miciav/shellcraft.git@9f2726ac31ab5bdcbf9a378f1cc4d99bdb5090c0",
+    "subprocess-toolkit==0.6.0",
 ]
 prometheus = ["httpx>=0.27"]
 multipass = [
-    "multipass-sdk @ git+https://github.com/miciav/multipass-sdk.git@402c4061e6b32cc6dda5e7a9876fa7cefd6f9ae1",
+    "multipass-vm-sdk==0.6.0",
     "pydantic>=2.9.2",
-    "shellcraft @ git+https://github.com/miciav/shellcraft.git@9f2726ac31ab5bdcbf9a378f1cc4d99bdb5090c0",
+    "subprocess-toolkit==0.6.0",
 ]
 azure = [
-    "azure-vm-sdk @ git+https://github.com/miciav/azure-vm-sdk.git@eb8a54203e36ea48cb37ba26044353ba4afc8259",
+    "azure-vm-sdk==0.6.0",
     "pydantic>=2.9.2",
-    "shellcraft @ git+https://github.com/miciav/shellcraft.git@9f2726ac31ab5bdcbf9a378f1cc4d99bdb5090c0",
+    "subprocess-toolkit==0.6.0",
 ]
 proxmox = [
-    "proxmox-sdk @ git+https://github.com/miciav/proxmox-sdk.git@b82c68c3ed5ecfdb9b90c047bb43df4749dd9817",
+    "proxmox-vm-sdk==0.6.0",
     "pydantic>=2.9.2",
-    "shellcraft @ git+https://github.com/miciav/shellcraft.git@9f2726ac31ab5bdcbf9a378f1cc4d99bdb5090c0",
+    "subprocess-toolkit==0.6.0",
 ]
 
 [build-system]

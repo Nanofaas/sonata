@@ -14,15 +14,18 @@ import sonata_engine
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SRC_ROOT = REPO_ROOT / "src" / "sonata_engine"
 
+# Module roots, not distribution names: the check compares the first component of
+# every import, so "azure_vm_sdk" never matched the importable "azure_vm" and
+# "multipass_sdk" never matched "multipass" -- neither protected anything.
 FORBIDDEN = {
     "controlplane_tool",
     "nanofaas",
     "nanolab",
     "sonata_tasks",
     "workflow_tasks",
-    "azure_vm_sdk",
-    "multipass_sdk",
-    "proxmox_sdk",
+    "azure_vm",
+    "multipass_vm_sdk",
+    "proxmox_vm_sdk",
 }
 
 

@@ -10,11 +10,11 @@ import time
 from pathlib import Path
 from typing import Protocol, cast
 
-from proxmox_sdk import ProxmoxClient
-from proxmox_sdk.exceptions import VmNotFoundError
-from proxmox_sdk.models import CloudInitConfig
-from proxmox_sdk.routing import PortMapping, ProxmoxRoutingManager
-from shellcraft.backend import ShellExecutionResult
+from proxmox_vm_sdk import ProxmoxClient
+from proxmox_vm_sdk.exceptions import VmNotFoundError
+from proxmox_vm_sdk.models import CloudInitConfig
+from proxmox_vm_sdk.routing import PortMapping, ProxmoxRoutingManager
+from subprocess_toolkit.backend import ShellExecutionResult
 
 from sonata_tasks.vm.models import VmRequest, vm_remote_home
 from sonata_tasks.vm.results import successful_result

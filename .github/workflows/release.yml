@@ -12,9 +12,16 @@ permissions:
 
 jobs:
   publish:
-    name: Build and publish sonata-engine
+    # Two distributions ship from this repository and are released together, so
+    # one tag publishes both. Each has its own trusted publisher on PyPI, and
+    # both point at this workflow and this environment.
+    name: Build and publish ${{ matrix.package }}
     runs-on: ubuntu-latest
-    # Must match the environment registered as this project's trusted publisher
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [sonata-engine, sonata-tasks]
+    # Must match the environment registered as each project's trusted publisher
     # on PyPI, along with owner, repository and this filename.
     environment: pypi
     permissions:
@@ -29,18 +36,20 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
 
-      - name: Build sonata-engine
-        run: uv build --package sonata-engine --out-dir dist
+      # One package per job, on its own runner, so dist/ holds exactly one
+      # wheel and the guard below can rely on that.
+      - name: Build ${{ matrix.package }}
+        run: uv build --package ${{ matrix.package }} --out-dir dist
 
       # The check that matters: uploading 0.7.0 under the tag v0.6.0 would burn
       # the 0.7.0 version number permanently.
       - name: Check the tag matches the built version
         run: |
           tag="${GITHUB_REF_NAME#v}"
-          # Globs every wheel rather than "<name>-*.whl". The wheel is named after
-          # the distribution, not the module, and for azure-vm-sdk the two differ
-          # (`azure_vm_sdk` against `azure_vm`), so a module-based glob matched
-          # nothing and failed the build. One package per repository, so one wheel.
+          # Globs every wheel rather than "<name>-*.whl": the wheel is named
+          # after the distribution, and a module-based glob matched nothing in a
+          # sibling repository, failing that build before its upload could even
+          # start. This no longer guesses a name.
           wheels=(dist/*.whl)
           if [ "${#wheels[@]}" -ne 1 ]; then
             echo "expected exactly one wheel in dist/, found ${#wheels[@]}" >&2

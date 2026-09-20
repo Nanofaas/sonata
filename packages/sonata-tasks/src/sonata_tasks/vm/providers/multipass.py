@@ -6,13 +6,17 @@ import shlex
 from pathlib import Path
 from typing import cast
 
-from multipass import (
+from multipass_vm_sdk import (
     MultipassClient,
     MultipassCommandError,
     VmNotFoundError,
     find_ssh_public_key,
 )
-from shellcraft.backend import ShellBackend, ShellExecutionResult, SubprocessShell
+from subprocess_toolkit.backend import (
+    ShellBackend,
+    ShellExecutionResult,
+    SubprocessShell,
+)
 
 from sonata_tasks.vm.models import VmRequest, vm_remote_home
 from sonata_tasks.vm.results import successful_result
