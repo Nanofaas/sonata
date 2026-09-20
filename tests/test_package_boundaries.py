@@ -66,6 +66,14 @@ def test_no_runtime_dependencies() -> None:
     assert pyproject["project"]["dependencies"] == []
 
 
+def test_dunder_version_matches_the_pyproject() -> None:
+    """The version is written in two places; this is what keeps them equal."""
+    with (REPO_ROOT / "pyproject.toml").open("rb") as f:
+        pyproject = tomllib.load(f)
+
+    assert sonata_engine.__version__ == pyproject["project"]["version"]
+
+
 def test_root_exports_the_v2_contract() -> None:
     expected = {
         "CorruptJournalError",
