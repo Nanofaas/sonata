@@ -147,15 +147,18 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Build task catalogue distribution
-        run: uv build --package sonata-tasks --out-dir dist
+      # Both distributions: the catalogue pins the engine exactly and the two are
+      # released together, so installing the catalogue alone would ask an index for
+      # an engine version that does not exist until this commit is released.
+      - name: Build the distributions
+        run: uv build --all-packages --out-dir dist
 
       - name: Install wheel and run independent consumer
         env:
           TASK_EXTRA: ${{ matrix.extra }}
         run: |
+          args=(dist/sonata_tasks-*.whl --with dist/sonata_engine-*.whl)
           if [ -n "$TASK_EXTRA" ]; then
-            python scripts/check_task_wheel.py dist/sonata_tasks-*.whl --extra "$TASK_EXTRA"
-          else
-            python scripts/check_task_wheel.py dist/sonata_tasks-*.whl
+            args+=(--extra "$TASK_EXTRA")
           fi
+          python scripts/check_task_wheel.py "${args[@]}"
