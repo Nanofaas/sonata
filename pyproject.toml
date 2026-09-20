@@ -4,8 +4,28 @@ license = "MIT"
 license-files = ["LICENSE"]
 version = "0.6.0"
 description = "A small, product-independent workflow engine for Python"
+readme = "README.md"
 requires-python = ">=3.12"
+authors = [
+    { name = "miciav", email = "5889596+miciav@users.noreply.github.com" }
+]
+keywords = ["workflow", "workflow-engine", "orchestration", "durable-execution"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Distributed Computing",
+]
 dependencies = []
+
+# PyPI shows a package page with no link home at all without these.
+[project.urls]
+Homepage = "https://github.com/miciav/sonata"
+Repository = "https://github.com/miciav/sonata"
+Issues = "https://github.com/miciav/sonata/issues"
 
 [build-system]
 requires = ["setuptools>=77"]

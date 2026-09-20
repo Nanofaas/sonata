@@ -1,0 +1,52 @@
+name: Release
+
+# A PyPI version can be yanked but never reused, so this only runs on a tag,
+# and the tag is checked against the version the build actually produced before
+# anything is uploaded.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Build and publish sonata-engine
+    runs-on: ubuntu-latest
+    # Must match the environment registered as this project's trusted publisher
+    # on PyPI, along with owner, repository and this filename.
+    environment: pypi
+    permissions:
+      # The whole credential: PyPI trusts a short-lived OIDC token minted here,
+      # so no API token is stored in the repository or in a secret.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Build sonata-engine
+        run: uv build --package sonata-engine --out-dir dist
+
+      # The check that matters: uploading 0.7.0 under the tag v0.6.0 would burn
+      # the 0.7.0 version number permanently.
+      - name: Check the tag matches the built version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          artifact="$(basename "$(ls dist/sonata_engine-*.whl)")"
+          case "$artifact" in
+            "sonata_engine-$tag-"*) echo "tag $GITHUB_REF_NAME matches $artifact" ;;
+            *)
+              echo "tag $GITHUB_REF_NAME does not match the built $artifact" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          packages-dir: dist/
