@@ -427,6 +427,12 @@ class ProxmoxVmProvider:
     def teardown(self, request: VmRequest) -> ShellExecutionResult:
         """Stop and delete the VM and remove its NAT rules.
 
+        ``purge=True`` also drops the VM from the Proxmox job configurations
+        that name it, which is what every other caller in the ecosystem asks for
+        -- the SDK's own end-to-end test, its integration test, its ``purge()``
+        and its README. Without it a delete leaves the VM referenced by jobs
+        that will go on looking for it.
+
         A VM that is already gone counts as success, and routing-cleanup
         failures are ignored; a failure deleting the VM itself is re-raised
         after cleanup has run. Returns a successful result otherwise.
@@ -442,7 +448,7 @@ class ProxmoxVmProvider:
                 if vm.info().state.value == "running":
                     vm.stop()
             try:
-                vm.delete()
+                vm.delete(purge=True)
             except VmNotFoundError:
                 pass
             except Exception as exc:
@@ -460,7 +466,7 @@ class ProxmoxVmProvider:
                 mgr.remove_rules(rules)
         if delete_error is not None:
             raise delete_error
-        return successful_result(["proxmox", "delete", name])
+        return successful_result(["proxmox", "delete", "--purge", name])
 
     def exec_argv(
         self,

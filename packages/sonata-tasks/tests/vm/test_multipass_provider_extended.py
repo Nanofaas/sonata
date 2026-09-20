@@ -175,7 +175,9 @@ def test_teardown_multipass_calls_delete() -> None:
     provider, _shell, client = _make_provider()
     req = VmRequest(lifecycle="multipass", name="my-vm")
     result = provider.teardown(req, dry_run=False)
-    client.get_vm.return_value.delete.assert_called_once()
+    # Not a bare delete: without --purge the instance only changes state, and
+    # teardown would report success with the VM still on the host.
+    client.get_vm.return_value.delete.assert_called_once_with(purge=True)
     assert result.return_code == 0
 
 

@@ -59,6 +59,7 @@ def test_teardown_dry_run_returns_ok() -> None:
     req = VmRequest(lifecycle="multipass", name="my-vm")
     result = provider.teardown(req, dry_run=True)
     assert result.return_code == 0
+    assert result.command == ["multipass", "delete", "--purge", "my-vm"]
 
 
 def test_connection_host_external() -> None:

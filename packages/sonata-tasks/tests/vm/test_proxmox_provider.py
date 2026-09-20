@@ -255,7 +255,7 @@ def test_teardown_success(mock_client_cls) -> None:
     provider = _make_provider()
     req = _make_request()
     result = provider.teardown(req)
-    vm_mock.delete.assert_called_once()
+    vm_mock.delete.assert_called_once_with(purge=True)
     assert result.return_code == 0
 
 
@@ -309,7 +309,7 @@ def test_teardown_stops_running_vm_before_delete(
 
     assert result.return_code == 0
     vm_mock.stop.assert_called_once()
-    vm_mock.delete.assert_called_once()
+    vm_mock.delete.assert_called_once_with(purge=True)
 
 
 @patch("sonata_tasks.vm.providers.proxmox.ProxmoxRoutingManager")
