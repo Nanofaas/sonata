@@ -1,0 +1,39 @@
+name: Check the release tag matches the built wheel
+description: >
+  Fail before uploading when the tag does not name the wheel that was built.
+  Shared by the release jobs so the guard that protects a PyPI version number
+  exists once rather than once per package.
+
+runs:
+  using: composite
+  steps:
+    # The check that matters: uploading 0.7.0 under the tag v0.6.0 would burn
+    # the 0.7.0 version number permanently.
+    - name: Compare the tag with dist/
+      shell: bash
+      run: |
+        set -euo pipefail
+        tag="${GITHUB_REF_NAME#v}"
+        # Without nullglob an empty dist/ expands to the literal "dist/*.whl",
+        # which counts as one wheel and would have the exactly-one check pass on
+        # nothing. The tag comparison below would still fail, but the message
+        # would name a glob rather than the empty directory that is the problem.
+        shopt -s nullglob
+        # Globs every wheel rather than "<name>-*.whl": the wheel is named after
+        # the distribution, and a module-based glob matched nothing in a sibling
+        # repository, failing that build before its upload could even start. This
+        # no longer guesses a name.
+        wheels=(dist/*.whl)
+        if [ "${#wheels[@]}" -ne 1 ]; then
+          echo "expected exactly one wheel in dist/, found ${#wheels[@]}" >&2
+          ls -la dist/ >&2
+          exit 1
+        fi
+        artifact="$(basename "${wheels[0]}")"
+        case "$artifact" in
+          *"-$tag-"*) echo "tag $GITHUB_REF_NAME matches $artifact" ;;
+          *)
+            echo "tag $GITHUB_REF_NAME does not match the built $artifact" >&2
+            exit 1
+            ;;
+        esac
