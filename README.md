@@ -347,9 +347,9 @@ what makes `TaskInputs`/`Resource` dependencies possible at all.
 This repository also builds **`sonata-tasks`**, a reusable task catalogue layered
 on the engine. Its public contracts, extras and journal migration rules are
 documented in
-[`docs/task-catalog.md`](https://github.com/miciav/sonata/blob/main/docs/task-catalog.md);
+[`docs/task-catalog.md`](https://github.com/Nanofaas/sonata/blob/main/docs/task-catalog.md);
 an independent executable consumer lives in
-[`examples/shared_tasks_client.py`](https://github.com/miciav/sonata/blob/main/examples/shared_tasks_client.py).
+[`examples/shared_tasks_client.py`](https://github.com/Nanofaas/sonata/blob/main/examples/shared_tasks_client.py).
 
 ## Development
 
@@ -379,4 +379,4 @@ local and CI results cannot drift, and `pytest` enforces the coverage gate
 declared in `[tool.coverage.report]`.
 
 The v2 design and the migration sequence it came from are documented in
-[`docs/plans/2026-07-24-release-on-workflow-engine.md`](https://github.com/miciav/sonata/blob/main/docs/plans/2026-07-24-release-on-workflow-engine.md).
+[`docs/plans/2026-07-24-release-on-workflow-engine.md`](https://github.com/Nanofaas/sonata/blob/main/docs/plans/2026-07-24-release-on-workflow-engine.md).

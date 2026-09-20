@@ -1148,7 +1148,7 @@ dev = [
 
 [[package]]
 name = "sonata-tasks"
-version = "0.2.0"
+version = "0.6.0"
 source = { editable = "packages/sonata-tasks" }
 dependencies = [
     { name = "sonata-engine" },

@@ -23,9 +23,9 @@ dependencies = []
 
 # PyPI shows a package page with no link home at all without these.
 [project.urls]
-Homepage = "https://github.com/miciav/sonata"
-Repository = "https://github.com/miciav/sonata"
-Issues = "https://github.com/miciav/sonata/issues"
+Homepage = "https://github.com/Nanofaas/sonata"
+Repository = "https://github.com/Nanofaas/sonata"
+Issues = "https://github.com/Nanofaas/sonata/issues"
 
 [build-system]
 requires = ["setuptools>=77"]
