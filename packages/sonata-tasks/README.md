@@ -10,3 +10,8 @@ Pod and OCI image inspection, and Minikube profile preflight in
 `sonata_tasks.vm.logged` provides bounded VM command output with a complete
 log copied to the host. Callers supply their own executor, VM provider, and
 product-specific image checks.
+
+`sonata_tasks.containerd` inspects a caller-owned container and its image using
+caller-supplied commands, then checks the runtime image reference and published
+manifest digest. The caller controls namespace, rootless session, and evidence
+storage; the task has no NanoLab or recipe dependency.
