@@ -3,10 +3,24 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 
 from sonata_tasks.command import CommandTask
 from sonata_tasks.execution.models import CommandOptions, TaskResult
 from sonata_tasks.execution.ports import CommandTaskExecutor
+
+
+def select_platform_manifest_digest(index: dict[str, Any], os: str, arch: str) -> str:
+    """Select one real platform manifest, ignoring attestation descriptors."""
+    matches = [
+        row.get("digest")
+        for row in index.get("manifests", [])
+        if row.get("platform", {}).get("os") == os
+        and row.get("platform", {}).get("architecture") == arch
+    ]
+    if len(matches) != 1 or not isinstance(matches[0], str):
+        raise ValueError(f"Published image has no unique {os}/{arch} platform")
+    return matches[0]
 
 
 def _docker_options(
