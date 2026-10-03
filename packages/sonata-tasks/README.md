@@ -15,3 +15,8 @@ product-specific image checks.
 caller-supplied commands, then checks the runtime image reference and published
 manifest digest. The caller controls namespace, rootless session, and evidence
 storage; the task has no NanoLab or recipe dependency.
+
+With the `shell` extra, `sonata_tasks.shell.SubprocessShell` streams stdout and
+stderr to the active workflow sink, including when no output listener is
+provided. An explicit listener receives each line as well; command results
+still contain the complete output and exit code.

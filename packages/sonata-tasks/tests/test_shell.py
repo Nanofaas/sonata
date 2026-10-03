@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import sys
 from contextlib import contextmanager
+from pathlib import Path
+from typing import override
 from unittest.mock import MagicMock, patch
 
-from sonata_engine.workflow.context import bind_workflow_sink
-from sonata_engine.workflow.events import WorkflowEvent
+import pytest
+
+from sonata_engine.workflow.context import bind_workflow_context, bind_workflow_sink
+from sonata_engine.workflow.events import WorkflowContext, WorkflowEvent
 from sonata_tasks.shell import (
     RecordingShell,
     ScriptedShell,
@@ -62,16 +67,46 @@ class _FakeSink:
         yield
 
 
-def test_subprocess_shell_routes_output_to_workflow_log_when_sink_active() -> None:
-    """Forward output lines to the workflow log while a sink is bound.
+@pytest.mark.parametrize("with_listener", [False, True])
+def test_subprocess_shell_streams_real_output_before_the_process_exits(
+    tmp_path: Path, with_listener: bool
+) -> None:
+    """A child waits for the sink to observe stdout before it can exit."""
+    acknowledgment = tmp_path / "observed"
 
-    bind_workflow_sink is a context manager; we use it as such for setup/teardown.
-    The sink must satisfy the WorkflowSink protocol (emit + status methods).
-    """
-    sink = _FakeSink()
-    with bind_workflow_sink(sink):
-        shell = SubprocessShell()
-        shell._emit_output("stdout", "hello-line")
+    class Sink(_FakeSink):
+        @override
+        def emit(self, event: WorkflowEvent) -> None:
+            super().emit(event)
+            if event.line == "hello-line":
+                acknowledgment.write_text("observed")
 
-    log_events = [(e.stream, e.line) for e in sink.events if e.kind == "log.line"]
-    assert ("stdout", "hello-line") in log_events
+    sink = Sink()
+    observed: list[tuple[str, str]] = []
+
+    def listener(stream: str, line: str) -> None:
+        observed.append((stream, line))
+
+    shell = SubprocessShell(output_listener=listener if with_listener else None)
+    context = WorkflowContext(flow_id="shell-stream", task_id="001.command")
+    script = (
+        "import pathlib, sys, time; "
+        "ack = pathlib.Path(sys.argv[1]); "
+        "print('hello-line', flush=True); "
+        "print('error-line', file=sys.stderr, flush=True); "
+        "deadline = time.monotonic() + 3; "
+        "\nwhile not ack.exists() and time.monotonic() < deadline: time.sleep(.01)"
+        "\nsys.exit(7 if ack.exists() else 1)"
+    )
+    with bind_workflow_sink(sink), bind_workflow_context(context):
+        result = shell.run([sys.executable, "-u", "-c", script, str(acknowledgment)])
+
+    assert result.return_code == 7
+    assert result.stdout == "hello-line\n"
+    assert result.stderr == "error-line\n"
+    expected = [("stderr", "error-line"), ("stdout", "hello-line")]
+    assert sorted((event.stream, event.line) for event in sink.events) == expected
+    assert all(event.flow_id == context.flow_id for event in sink.events)
+    assert all(event.task_id == context.task_id for event in sink.events)
+    assert sorted(observed) == (expected if with_listener else [])
+    assert shell.output_listener is (listener if with_listener else None)
