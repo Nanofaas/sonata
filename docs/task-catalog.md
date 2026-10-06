@@ -27,3 +27,10 @@ reaps detached descendants through an isolated subreaper, and returns cleanup
 evidence instead of treating an exit code as sufficient proof of success.
 See the catalogue README for an ordinary Python command example and the
 standalone `sonata_tasks.owned_process` worker module.
+
+`sonata_tasks.artifacts` owns fresh bounded directories, appends strict JSONL,
+and publishes immutable JSON/raw files without replacing existing names. Its
+reserve, ownership marker and optional cumulative-usage callback are explicit
+inputs. Streaming decoding distinguishes a torn tail from complete corruption;
+product evidence schemas and file-retention rules stay in clients. See the
+catalogue README for an ordinary command audit directory example.
