@@ -347,3 +347,34 @@ def test_unreadable_snapshot_is_not_accepted_as_empty(tmp_path, monkeypatch):
     monkeypatch.setattr(os, "scandir", denied)
     with pytest.raises(PermissionError, match="unreadable snapshot"):
         verify_snapshot(snapshot)
+
+
+def test_file_replaced_by_symlink_does_not_change_external_mode(
+    source, tmp_path, monkeypatch
+):
+    from sonata_tasks.artifacts import ArtifactWriter
+    from sonata_tasks.sources import capture_source_snapshot
+
+    outside = tmp_path / "external-file"
+    outside.write_text("unrelated data")
+    outside.chmod(0o600)
+    (source / "sdk.txt").chmod(0o755)
+    original_copy = shutil.copyfile
+
+    def replacing_copy(src, dst, **kwargs):
+        if str(src) == str(source / "sdk.txt"):
+            (source / "sdk.txt").unlink()
+            (source / "sdk.txt").symlink_to(outside)
+        return original_copy(src, dst, **kwargs)
+
+    monkeypatch.setattr(shutil, "copyfile", replacing_copy)
+    writer = ArtifactWriter(tmp_path / "snapshot", 100000)
+    try:
+        with pytest.raises(ValueError, match=r"source symlink escapes|copied source"):
+            capture_source_snapshot(source, writer, max_bytes=100000)
+        assert outside.stat().st_mode & 0o777 == 0o600
+        assert outside.read_text() == "unrelated data"
+        writer.write_json("failure.json", {"status": "source-changed"})
+        assert (writer.root / "failure.json").is_file()
+    finally:
+        writer.close()

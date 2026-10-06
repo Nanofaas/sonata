@@ -216,7 +216,9 @@ def capture_source_snapshot(
             target.parent.mkdir(parents=True, exist_ok=True)
         if entry.kind == "file":
             shutil.copyfile(root / entry.path, target, follow_symlinks=False)
-            target.chmod(entry.mode)
+            if not stat.S_ISREG(target.lstat().st_mode):
+                raise SourceChangedError("copied source is no longer a regular file")
+            target.chmod(entry.mode, follow_symlinks=False)
         elif entry.kind == "symlink":
             if entry.link_target is None:
                 raise ValueError("symlink source entry is missing its target")
