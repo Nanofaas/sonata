@@ -51,7 +51,7 @@ from sonata_engine.workflow import (
     workflow_log,
 )
 
-__version__ = "0.6.8"
+__version__ = "0.6.9"
 
 __all__ = [
     "AmbiguousTaskStateError",
