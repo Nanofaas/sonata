@@ -1,4 +1,4 @@
-"""Run and supervise a long-lived local process as a resource."""
+"""Portable managed processes and bounded Linux command ownership."""
 
 from __future__ import annotations
 
@@ -10,6 +10,9 @@ from typing import Any, Protocol, overload
 
 from sonata_engine import Resource, TaskInputs
 from sonata_tasks.compensation import best_effort
+from sonata_tasks.owned_process import OwnedCommandResult as OwnedCommandResult
+from sonata_tasks.owned_process import OwnedCommandRunner as OwnedCommandRunner
+from sonata_tasks.owned_process import run_owned_command as run_owned_command
 
 
 class ManagedProcess(Protocol):

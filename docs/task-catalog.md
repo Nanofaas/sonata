@@ -19,3 +19,11 @@ created by the other version.
 
 See `examples/shared_tasks_client.py` for a consumer that records Docker and k6
 commands and executes one harmless local command without importing nanolab.
+
+`sonata_tasks.process` provides portable managed-process resources and a separate
+Linux-only owned-command API (`OwnedCommandRunner`, `OwnedCommandResult`,
+`run_owned_command`). The latter bounds deadlines and combined log/summary bytes,
+reaps detached descendants through an isolated subreaper, and returns cleanup
+evidence instead of treating an exit code as sufficient proof of success.
+See the catalogue README for an ordinary Python command example and the
+standalone `sonata_tasks.owned_process` worker module.
