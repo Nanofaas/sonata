@@ -34,3 +34,12 @@ reserve, ownership marker and optional cumulative-usage callback are explicit
 inputs. Streaming decoding distinguishes a torn tail from complete corruption;
 product evidence schemas and file-retention rules stay in clients. See the
 catalogue README for an ordinary command audit directory example.
+
+`sonata_tasks.buildx.buildx_builder_resource` preserves its default reuse and
+replacement modes and adds opt-in `exclusive` ownership. Private builders get a
+unique node; cleanup reconciles partial creation and removes only the unchanged
+single-node `docker-container` builder. `use=False` preserves client selection,
+and `owner_node` can provide an explicit receipt identity. Callers serialize
+mutations of their Buildx client store around inspection/removal and supply any
+emulation or platform validation policy. See the catalogue README for a private
+application builder example.

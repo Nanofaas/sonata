@@ -123,3 +123,45 @@ or default reservation. `owner_marker` selects a safe hidden filename, defaultin
 `IncompleteRecordError` with `path` and `line_number` for a final record without
 a newline. Complete malformed, non-object, non-finite or oversized records
 raise `ArtifactCorruptionError`; clients decide how to report missing evidence.
+
+`sonata_tasks.buildx.buildx_builder_resource` can acquire a private application
+builder with `exclusive=True`. It refuses existing names, assigns a unique owner
+node, bootstraps the builder and returns its name. `use=False` leaves the client's
+selected builder intact. Default reuse and optional replacement remain available.
+
+```python
+from sonata_engine import TaskInputs
+from sonata_tasks.buildx import buildx_builder_resource
+from sonata_tasks.execution.local import LocalCommandTaskExecutor
+from sonata_tasks.execution.models import CommandOptions
+
+inputs = TaskInputs.empty()
+builder = buildx_builder_resource(
+    name="application-build",
+    executor=LocalCommandTaskExecutor(),
+    exclusive=True,
+    use=False,
+    options=CommandOptions(env={"DOCKER_CONFIG": "/tmp/application-docker"}),
+)
+name = builder.acquire(inputs)
+try:
+    print(f"Build application images with docker buildx build --builder {name}")
+finally:
+    builder.release(inputs, name)
+```
+
+Exclusive cleanup verifies the original single node and `docker-container`
+driver before removing the builder. Failed creation and validation compensate
+partial state; the original exception retains cleanup failures as notes. An
+explicit `owner_node` lets a caller record the identity. After failed acquisition,
+`release(inputs, "application-build")` can retry unresolved cleanup; it does
+nothing after confirmed removal or absence. Foreign replacement, added nodes or
+unavailable inspection prevent removal and report an error. Callers serialize
+other mutations of the same Buildx client store during inspection and removal;
+Docker's CLI has no atomic compare-and-delete operation. Emulation installation
+and platform requirements remain caller policy.
+
+A failed `buildx rm` may erase the client record while leaving the daemon alive.
+After such a failure, record absence remains unresolved and requires operator
+reconciliation. A retry succeeds if the same owned builder is still inspectable
+and its removal succeeds; an empty listing alone cannot confirm daemon cleanup.
