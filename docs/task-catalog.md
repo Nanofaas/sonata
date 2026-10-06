@@ -43,3 +43,13 @@ and `owner_node` can provide an explicit receipt identity. Callers serialize
 mutations of their Buildx client store around inspection/removal and supply any
 emulation or platform validation policy. See the catalogue README for a private
 application builder example.
+
+## Working-tree source snapshots
+
+`sonata_tasks.sources` supplies `SourceEntry`, `SourceSnapshot`,
+`capture_source_snapshot`, `source_entry`, `verify_snapshot` and
+`materialize_snapshot`. Capture uses caller-owned artifact storage, seals tracked
+and nonignored inputs (including deletions/modes/safe links) and rejects observed
+concurrent changes. Input and manifest budgets are separate; receipts remain
+caller policy. Workspaces are copied independently and verified against the
+frozen inventory. See the package README for ownership and filesystem limits.

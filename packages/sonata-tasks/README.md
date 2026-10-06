@@ -124,6 +124,42 @@ or default reservation. `owner_marker` selects a safe hidden filename, defaultin
 a newline. Complete malformed, non-object, non-finite or oversized records
 raise `ArtifactCorruptionError`; clients decide how to report missing evidence.
 
+`sonata_tasks.sources` captures a Git working tree for repeatable local builds:
+tracked files (including deletions), nonignored untracked files, executable modes
+and safe relative symlinks. Already dangling internal links are preserved; links
+outside the checkout or to existing excluded inputs, cycles and submodules fail.
+This differs from the committed-source remote transfer in `sonata_tasks.archive`.
+
+```python
+from pathlib import Path
+
+from sonata_tasks.artifacts import ArtifactWriter
+from sonata_tasks.sources import capture_source_snapshot, materialize_snapshot
+
+writer = ArtifactWriter(Path("/tmp/application-snapshot"), 16 * 1024 * 1024)
+try:
+    snapshot = capture_source_snapshot(
+        Path("/path/to/application"), writer, max_bytes=128 * 1024 * 1024
+    )
+    writer.write_json("receipt.json", {"fingerprint": snapshot.fingerprint})
+finally:
+    writer.close()
+workspace = materialize_snapshot(snapshot, Path("/tmp/application-build"))
+```
+
+The caller owns/closes storage and chooses its receipt schema. Capture creates
+`tree` and `source-manifest.jsonl`; failed capture retains partial evidence.
+`max_bytes` bounds input bytes, including symlink target bytes; the writer's
+quota separately bounds the manifest, with a 100000-entry inventory limit.
+`SourceSnapshot` seals the manifest and inventory with bare-hex SHA-256 identities.
+`verify_snapshot` rejects changed inputs/manifest; `materialize_snapshot` verifies
+before and after copying to a fresh independent workspace. `source_entry` supports
+checking original inputs in a workspace that also contains generated outputs.
+The caller must control its filesystem namespace and serialize concurrent writes;
+repeated inventory checks detect ordinary concurrent changes, without making
+capture atomic against hostile filesystem mutation. Verification ignores empty
+directories and binds file/link modes, paths and contents, not directory metadata.
+
 `sonata_tasks.buildx.buildx_builder_resource` can acquire a private application
 builder with `exclusive=True`. It refuses existing names, assigns a unique owner
 node, bootstraps the builder and returns its name. `use=False` leaves the client's
