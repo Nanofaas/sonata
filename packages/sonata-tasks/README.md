@@ -201,3 +201,85 @@ A failed `buildx rm` may erase the client record while leaving the daemon alive.
 After such a failure, record absence remains unresolved and requires operator
 reconciliation. A retry succeeds if the same owned builder is still inspectable
 and its removal succeeds; an empty listing alone cannot confirm daemon cleanup.
+
+
+Compose resources can clear previous project state before deployment when the
+caller explicitly owns an isolated project name:
+
+```python
+from pathlib import Path
+from sonata_engine import Workflow
+from sonata_tasks.command import CommandTask
+from sonata_tasks.compose import DockerComposeProject, docker_compose_resource
+from sonata_tasks.execution.local import LocalCommandTaskExecutor
+
+project = DockerComposeProject(
+    name="application-integration-test",
+    file=Path("compose.yaml"),
+    ready_url="http://127.0.0.1:8080/health",
+    build=False,
+)
+resource = docker_compose_resource(
+    project,
+    executor=LocalCommandTaskExecutor(),
+    pre_clean=True,
+    remove_volumes=True,
+    remove_orphans=True,
+)
+workflow = Workflow("application-integration-test")
+workflow.add(
+    CommandTask(
+        title="Check application",
+        argv=("curl", "-fsS", project.ready_url),
+        executor=LocalCommandTaskExecutor(),
+    ),
+    requires=(resource,),
+)
+workflow.run()
+```
+
+By default `pre_clean=False`: acquisition only deploys and waits for readiness.
+Both pre-clean and final teardown use the same optional volume/orphan flags.
+Failed acquisition performs best-effort teardown and retains cleanup failures
+as exception notes. The caller chooses the namespace and removal policy; the
+resource does not verify exclusive ownership of existing Compose state. It
+returns the original project object, including subclass fields, and accepts
+resource dependencies through `requires`.
+
+VM executors can translate local project directories to an explicitly selected
+remote checkout. Supply both roots when configuring an injected VM runner:
+
+```python
+from pathlib import Path
+from sonata_tasks.execution.adapters import VmCommandTaskExecutor
+from sonata_tasks.execution.models import CommandOptions, CommandTaskSpec
+
+
+def run_remote_build(vm_runner):
+    executor = VmCommandTaskExecutor(
+        vm_runner,
+        target_key="application-build-vm",
+        local_root=Path("/workspace/application"),
+        remote_root="/srv/application/releases/test",
+    )
+    return executor.run(
+        CommandTaskSpec(
+            task_id="build",
+            summary="Build application",
+            argv=("make",),
+            options=CommandOptions(cwd=Path("src"), env={"MODE": "test"}),
+        )
+    )
+```
+
+The runner receives `/srv/application/releases/test/src` as `remote_dir`.
+Absolute local directories must remain under the resolved local root; relative
+ones resolve against it. Parent-directory and symlink escapes, or simultaneous
+`cwd` and `remote_dir`, fail before calling the backend, including in dry runs.
+With no `cwd`, the original `remote_dir` passes through and the runner retains
+its defaults. Without mapping roots, local `cwd` remains unsupported. Remote
+roots are nonempty POSIX paths; relative roots retain the runner's meaning and
+are not canonicalized on the remote filesystem. Timeouts remain unsupported.
+The binding identity includes the target and both mapping roots, so changes to
+the destination invalidate command fingerprints. Enabling mapping also changes
+existing bindings once, which can cause previously journalled commands to rerun.

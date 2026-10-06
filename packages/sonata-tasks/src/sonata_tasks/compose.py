@@ -137,20 +137,43 @@ class DestroyDockerCompose(CommandTask):
         )
 
 
-def docker_compose_resource(
-    project: DockerComposeProject,
+def docker_compose_resource[T: DockerComposeProject](
+    project: T,
     *,
     executor: CommandTaskExecutor,
     role: str = "host",
     options: CommandOptions | None = None,
+    pre_clean: bool = False,
     remove_volumes: bool = False,
     remove_orphans: bool = False,
     requires: tuple[Resource[Any], ...] = (),
-) -> Resource[DockerComposeProject]:
-    """Manage the supplied project; acquisition performs deploy then readiness."""
+) -> Resource[T]:
+    """Deploy, wait for, and release the supplied project without copying it.
+
+    ``pre_clean`` runs ``down`` before deployment for a caller-owned project
+    namespace. Both cleanup commands use the supplied removal flags; by
+    default there is no pre-clean and volumes and orphans are retained.
+    Acquisition failures trigger best-effort teardown, including failures
+    during pre-clean itself.
+    """
     deploy = Steps(
         title=f"Acquire Docker Compose project {project.name}",
         steps=(
+            *(
+                (
+                    DestroyDockerCompose(
+                        project,
+                        executor=executor,
+                        role=role,
+                        options=options,
+                        title=f"Clear any previous {project.name} state",
+                        remove_volumes=remove_volumes,
+                        remove_orphans=remove_orphans,
+                    ),
+                )
+                if pre_clean
+                else ()
+            ),
             DeployDockerCompose(project, executor=executor, role=role, options=options),
             WaitForDockerCompose(
                 project, executor=executor, role=role, options=options
@@ -166,7 +189,7 @@ def docker_compose_resource(
         remove_orphans=remove_orphans,
     )
 
-    def acquire(inputs: TaskInputs) -> DockerComposeProject:
+    def acquire(inputs: TaskInputs) -> T:
         _ = deploy.run(inputs)
         return project
 

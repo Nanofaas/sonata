@@ -4,7 +4,7 @@ from typing import override
 
 import pytest
 
-from sonata_engine import Workflow
+from sonata_engine import Resource, Task, TaskInputs, TaskOutcome, Workflow
 from sonata_tasks.command import CommandTask
 from sonata_tasks.compose import DockerComposeProject, docker_compose_resource
 from sonata_tasks.execution.models import CommandOptions
@@ -202,3 +202,113 @@ def test_compose_resource_tears_down_when_readiness_fails() -> None:
         "example-validate",
         "down",
     )
+
+
+@dataclass(frozen=True, slots=True)
+class TaggedProject(DockerComposeProject):
+    tag: str = "consumer-value"
+
+
+def test_opt_in_pre_clean_preserves_subclass_value_dependencies_and_options() -> None:
+    executor = RecordingExecutor()
+    project = TaggedProject(
+        "isolated", Path("compose.yaml"), "http://ready", build=False
+    )
+    events: list[str] = []
+    dependency = Resource(
+        title="Prepare",
+        acquire=lambda _inputs: events.append("prepare"),
+        release=lambda _inputs, _value: events.append("release"),
+    )
+    resource: Resource[TaggedProject] = docker_compose_resource(
+        project,
+        executor=executor,
+        pre_clean=True,
+        role="builder",
+        options=CommandOptions(cwd=Path("/app"), env={"MODE": "isolated"}),
+        remove_volumes=True,
+        remove_orphans=True,
+        requires=(dependency,),
+    )
+
+    class UseProject(Task[None]):
+        title = "Use"
+
+        @override
+        def run(self, inputs: TaskInputs) -> TaskOutcome[None]:
+            assert inputs.resource(resource) is project
+            assert inputs.resource(resource).tag == "consumer-value"
+            events.append("use")
+            return TaskOutcome(value=None)
+
+    workflow = Workflow("isolated")
+    workflow.add(UseProject(), requires=(resource,))
+    workflow.run()
+
+    assert events == ["prepare", "use", "release"]
+    assert [
+        "curl" if task.argv[0] == "curl" else task.argv[6] for task in executor.seen
+    ] == ["down", "up", "curl", "down"]
+    assert executor.seen[0].argv == executor.seen[-1].argv
+    assert executor.seen[0].argv[-2:] == ("--volumes", "--remove-orphans")
+    assert executor.seen[0].summary == "Clear any previous isolated state"
+    assert "--build" not in executor.seen[1].argv
+    assert all(
+        task.role == "builder"
+        and task.options.cwd == Path("/app")
+        and task.options.env == {"MODE": "isolated"}
+        for task in executor.seen
+    )
+
+
+@dataclass
+class FailingPhaseExecutor(RecordingExecutor):
+    phase: str = "up"
+    fail_cleanup: bool = False
+
+    @override
+    def run(self, task: CommandTaskSpec, *, dry_run: bool = False) -> TaskResult:
+        self.seen.append(task)
+        phase = "curl" if task.argv[0] == "curl" else task.argv[6]
+        if phase == self.phase or (
+            self.fail_cleanup and phase == "down" and len(self.seen) > 1
+        ):
+            return TaskResult(
+                task_id=task.task_id,
+                status="failed",
+                return_code=1,
+                stderr=f"failed {phase}",
+            )
+        return TaskResult(task_id=task.task_id, status="passed", return_code=0)
+
+
+@pytest.mark.parametrize(
+    ("phase", "expected"),
+    [
+        ("down", ["down", "down"]),
+        ("up", ["down", "up", "down"]),
+        ("curl", ["down", "up", "curl", "down"]),
+    ],
+)
+@pytest.mark.parametrize("fail_cleanup", [False, True])
+def test_pre_clean_compensates_each_acquisition_failure_preserving_primary_error(
+    phase: str, expected: list[str], fail_cleanup: bool
+) -> None:
+    executor = FailingPhaseExecutor(phase=phase, fail_cleanup=fail_cleanup)
+    resource = docker_compose_resource(
+        DockerComposeProject("isolated", Path("compose.yaml"), "http://ready"),
+        executor=executor,
+        pre_clean=True,
+    )
+    workflow = Workflow("failure")
+    workflow.add(
+        CommandTask(title="Use", argv=("true",), executor=executor),
+        requires=(resource,),
+    )
+    with pytest.raises(RuntimeError, match=f"failed {phase}") as failure:
+        workflow.run()
+    assert [
+        "curl" if task.argv[0] == "curl" else task.argv[6] for task in executor.seen
+    ] == expected
+    if fail_cleanup or phase == "down":
+        assert any("failed down" in note for note in failure.value.__notes__)
