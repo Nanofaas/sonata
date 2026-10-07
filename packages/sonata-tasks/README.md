@@ -320,3 +320,29 @@ keys must be hashable and consistently comparable, non-null/non-boolean and
 finite when numeric. Missing keys have distinct internal identities and cannot
 collide with observed keys; dates and units are not parsed. Callers
 choose metrics, counter classification, time windows and qualification policy.
+
+`sonata_tasks.credentials` validates and stages private application files through
+any existing `RemoteProvider`. This base-only API needs POSIX current-user
+ownership, no-follow/nonblocking opens, and trusted providers with
+caller-controlled filesystem namespaces. Source files must be nonempty regular
+owner-readable files with no group/world permissions. Copies are 0600 inside
+0700 directories; remote targets must support `mktemp`, `chmod` and `rm`.
+Names and prefix are public basenames, never credential contents.
+
+```python
+from pathlib import Path
+
+from sonata_tasks.credentials import stage_private_files, validate_private_file
+
+source = validate_private_file(Path("service.key"))
+with stage_private_files(provider, request, {"service-key": source}) as staged:
+    directory, paths = staged
+    configure_service(paths["service-key"])
+```
+
+The context removes both temporary locations on success and failure. Operational
+provider failures omit command output and exception messages. Body/programming
+exceptions retain their type after successful cleanup; `CredentialCleanupError`
+reports only the interrupted operation's type when cleanup fails. An invalid
+`mktemp` response is refused without guessing a directory to remove. The provider
+and caller remain responsible for protecting the remote filesystem namespace.
