@@ -346,3 +346,52 @@ exceptions retain their type after successful cleanup; `CredentialCleanupError`
 reports only the interrupted operation's type when cleanup fails. An invalid
 `mktemp` response is refused without guessing a directory to remove. The provider
 and caller remain responsible for protecting the remote filesystem namespace.
+
+
+### Frozen source archives
+
+Use `sonata_tasks.archive.stage_source_archive` in an ordinary application to
+reuse an existing archive across targets. Supply `expected_digest` (64 hex
+characters, optionally prefixed with `sha256:`) to bind the consumed bytes to
+previous evidence. Local mismatches fail before any remote changes; the remote
+SHA-256 is checked before Python's data-filter extraction. Direct callers use
+`remove_source_archive` for normal release; failed staging compensates both
+remote paths and notes operational cleanup failures on the primary error.
+
+```python
+from pathlib import Path
+from sonata_tasks.archive import stage_source_archive, remove_source_archive
+
+stage_source_archive(
+    provider,
+    request,
+    archive=Path("application.tar"),
+    expected_digest=application_digest,
+    remote_archive="/srv/application-run/source.tar",
+    remote_source_dir="/srv/application-run/source",
+)
+try:
+    run_application("/srv/application-run/source")
+finally:
+    remove_source_archive(
+        provider,
+        request,
+        remote_archive="/srv/application-run/source.tar",
+        remote_source_dir="/srv/application-run/source",
+    )
+```
+
+`source_archive_resource(archive=path, expected_digest=digest, provider=provider, request=request, remote_archive=archive_path, remote_source_dir=source_path)` offers the
+same frozen reuse as a workflow Resource. Use `strict_cleanup=True` to remove
+both remote paths and report unsuccessful release. Its existing Git-export
+mode rejects expected_digest without a frozen archive and still exports per
+acquisition, uses tar extraction and best-effort release
+by default. Frozen resources always release; local bytes remain caller-owned.
+
+Targets need Python >=3.12 plus mkdir, rm and sha256sum. Safe extraction preserves
+file execute bits and sets directories to0755. The shared
+`SOURCE_ARCHIVE_EXTRACT_SCRIPT` provides identical extraction on a planning host.
+Reserve exclusive canonical absolute nonroot destinations: source and archive
+must not overlap. Providers and parent namespaces are trusted; callers coordinate
+concurrent writers. Cleanup cannot guarantee recovery after forced termination
+or a permanently unreachable target.
