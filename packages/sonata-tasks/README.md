@@ -283,3 +283,38 @@ are not canonicalized on the remote filesystem. Timeouts remain unsupported.
 The binding identity includes the target and both mapping roots, so changes to
 the destination invalidate command fingerprints. Enabling mapping also changes
 existing bindings once, which can cause previously journalled commands to rerun.
+
+
+Pure measurement readers are available without optional integrations:
+
+```python
+from sonata_tasks.k6 import k6_value, k6_values
+from sonata_tasks.metrics import counter_delta, point_stats
+
+summary = {"http_reqs": {"values": {"count": 12}}}
+requests = k6_value(k6_values(summary, "http_reqs"), "http_reqs", "count")
+observations = [
+    {"timestamp": 1, "value": "10", "labels": {"job": "application"}},
+    {"timestamp": 2, "value": "14", "labels": {"job": "application"}},
+]
+assert requests == 12
+assert counter_delta(observations) == 4
+assert point_stats(observations, counter=True)["delta"] == 4
+```
+
+`k6_values` accepts flat summary exports and nested `handleSummary` values.
+`k6_value` requires a finite nonnegative JSON number; the first present alias
+wins, even when malformed. Missing/invalid values raise `ValueError`. The
+standard `checks` and `http_req_failed` rate/value fields must be within 0..1.
+`finite_number` also accepts numeric strings, excluding booleans and nonfinite
+values, with optional nonnegative validation.
+
+Counter deltas group complete publisher labels and require two samples per
+publisher. Timestamped publisher samples are sorted; incomplete timestamps
+retain input order. A decrease contributes the new counter value. Invalid,
+missing or overflowing evidence returns `None`, while a constant counter
+returns zero. Statistics sum equal timestamps and allow negative gauges.
+Invalid values, sums or timestamp keys produce counts and `invalid_points`
+without statistics; an unavailable or overflowing delta is omitted. Timestamp
+keys must be consistently comparable; dates and units are not parsed. Callers
+choose metrics, counter classification, time windows and qualification policy.

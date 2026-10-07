@@ -1,17 +1,18 @@
-"""Run a k6 load test and report whether its thresholds passed."""
+"""Run k6 load tests and interpret their exported summary measurements."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import replace
 from datetime import UTC, datetime
-from typing import override
+from typing import Any, override
 
 from sonata_engine import Task, TaskInputs, TaskOutcome
 from sonata_tasks.core.fingerprint import fingerprint_digest
 from sonata_tasks.execution.models import CommandOptions, CommandTaskSpec
 from sonata_tasks.execution.ports import CommandTaskExecutor
 from sonata_tasks.k6_models import K6Config, K6RunResult
+from sonata_tasks.metrics import finite_number
 
 K6ConfigSource = K6Config | Callable[[TaskInputs], K6Config]
 
@@ -155,3 +156,39 @@ class K6Task(Task[K6RunResult]):
                 }
             ),
         }
+
+
+def k6_values(metrics: Mapping[str, Any], name: str) -> Mapping[str, Any]:
+    """Read summary-export's flat values or handleSummary's nested values."""
+    entry = metrics.get(name, {})
+    if not isinstance(entry, Mapping):
+        raise ValueError(f"k6.{name} must be a mapping")
+    values = entry.get("values", entry)
+    if not isinstance(values, Mapping):
+        raise ValueError(f"k6.{name} must be a mapping")
+    return values
+
+
+def k6_value(values: Mapping[str, Any], name: str, *keys: str) -> float:
+    """Require a finite nonnegative k6 value; first present alias wins."""
+    for key in keys:
+        if key not in values:
+            continue
+        value = values[key]
+        try:
+            # k6 writes JSON numbers. Numeric strings indicate malformed evidence.
+            if not isinstance(value, (int, float)):
+                raise ValueError("k6 measurement must be numeric")
+            number = finite_number(value, nonnegative=True)
+            if (
+                name in {"http_req_failed", "checks"}
+                and key in {"rate", "value"}
+                and number > 1
+            ):
+                raise ValueError("rate must be between 0 and 1")
+            return number
+        except ValueError as error:
+            raise ValueError(
+                f"invalid required k6 metric {name}.{key}: {error}"
+            ) from error
+    raise ValueError(f"missing required k6 metric {name}: {'/'.join(keys)}")
