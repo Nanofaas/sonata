@@ -288,3 +288,15 @@ def test_archive_modes_require_expected_evidence_or_git_source(tmp_path, frozen)
         shared.source_archive_resource(archive=frozen[0], **args)
     with pytest.raises(ValueError, match=r"digest|SHA-256|paths|overlap|repo_root"):
         shared.source_archive_resource(**args)
+
+
+def test_export_mode_rejects_unused_expected_digest(tmp_path, frozen):
+    with pytest.raises(ValueError, match="expected_digest"):
+        shared.source_archive_resource(
+            repo_root=tmp_path,
+            commit="HEAD",
+            expected_digest=frozen[1],
+            provider=LocalTarget(),
+            request=object(),
+            **locations(tmp_path),
+        )

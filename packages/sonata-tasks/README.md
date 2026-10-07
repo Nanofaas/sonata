@@ -384,7 +384,8 @@ finally:
 `source_archive_resource(archive=path, expected_digest=digest, provider=provider, request=request, remote_archive=archive_path, remote_source_dir=source_path)` offers the
 same frozen reuse as a workflow Resource. Use `strict_cleanup=True` to remove
 both remote paths and report unsuccessful release. Its existing Git-export
-mode still exports per acquisition, uses tar extraction and best-effort release
+mode rejects expected_digest without a frozen archive and still exports per
+acquisition, uses tar extraction and best-effort release
 by default. Frozen resources always release; local bytes remain caller-owned.
 
 Targets need Python >=3.12 plus mkdir, rm and sha256sum. Safe extraction preserves

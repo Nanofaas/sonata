@@ -248,6 +248,8 @@ def source_archive_resource[RequestT](
     remote paths and report cleanup failures; the default release is unchanged.
     """
     if archive is None:
+        if expected_digest is not None:
+            raise ValueError("expected_digest requires a frozen archive")
         if repo_root is None or commit is None:
             raise ValueError("repo_root and commit are required for Git export")
     else:
