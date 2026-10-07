@@ -1,10 +1,13 @@
-"""Check Prometheus scrape output for expected samples and value minimums."""
+"""Interpret numeric observations and check Prometheus scrape output."""
 
 from __future__ import annotations
 
+import math
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from functools import partial
+from itertools import pairwise
+from typing import Any
 
 from sonata_engine import TaskInputs
 from sonata_tasks.command import CommandTask
@@ -207,3 +210,122 @@ class PrometheusMinimumCheckTask(CommandTask):
             ),
             semantic_key=key,
         )
+
+
+def finite_number(value: object, *, nonnegative: bool = False) -> float:
+    """Read a finite int, float or numeric string, excluding booleans.
+
+    Raises:
+        ValueError: If the value is not finite/numeric, or is negative when
+            ``nonnegative`` is required.
+
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        raise ValueError("measurement must be a finite number")
+    try:
+        number = float(value)
+    except (ValueError, OverflowError) as error:
+        raise ValueError("measurement must be a finite number") from error
+    if not math.isfinite(number) or (nonnegative and number < 0):
+        raise ValueError("measurement must be a finite nonnegative number")
+    return number
+
+
+def counter_delta(points: Sequence[Mapping[str, Any]]) -> float | None:
+    """Sum counter increments and resets independently for each publisher.
+
+    Full string-to-string ``labels`` identify a publisher. Each needs at least
+    two samples;
+    timestamped samples sort chronologically when every sample in that
+    publisher has a timestamp, otherwise input order is used. Supplied keys
+    must be hashable, non-null/non-boolean and finite when numeric. The first
+    sample establishes the baseline; a decrease contributes the new value.
+    Empty, malformed, negative/nonfinite or overflowing evidence is
+    unavailable (``None``), distinct from a valid zero increment.
+    """
+    if not points:
+        return None
+    series: dict[tuple[tuple[str, str], ...], list[Mapping[str, Any]]] = {}
+    try:
+        for point in points:
+            _ = finite_number(point.get("value"), nonnegative=True)
+            _ = _point_timestamp(point)
+            labels = point.get("labels", {})
+            if not isinstance(labels, Mapping) or any(
+                not isinstance(key, str) or not isinstance(value, str)
+                for key, value in labels.items()
+            ):
+                return None
+            key = tuple(sorted(labels.items()))
+            series.setdefault(key, []).append(point)
+        total = 0.0
+        for samples in series.values():
+            if len(samples) < 2:
+                return None
+            if all("timestamp" in point for point in samples):
+                samples = sorted(samples, key=lambda point: point["timestamp"])
+            values = [finite_number(point["value"]) for point in samples]
+            for previous, current in pairwise(values):
+                total += current - previous if current >= previous else current
+    except (AttributeError, TypeError, ValueError):
+        return None
+    return total if math.isfinite(total) else None
+
+
+def point_stats(
+    points: Sequence[Mapping[str, Any]], *, counter: bool = False
+) -> dict[str, float | int]:
+    """Summarize points without turning unavailable evidence into zero.
+
+    Samples at equal timestamps are summed. Fully timestamped inputs sort
+    by their keys, which must be consistently comparable; other inputs use
+    insertion order and distinct internal keys for missing timestamps.
+    Supplied keys must be hashable, non-null/non-boolean and finite when numeric.
+    Gauges can be negative/decrease. Counter deltas use publisher labels
+    before aggregation. Invalid values/sums/keys retain counts but omit
+    statistics; an overflowing delta alone is omitted. Dates and time units
+    are not parsed or normalized.
+    """
+    merged: dict[Any, float] = {}
+    invalid = 0
+    for point in points:
+        try:
+            value = finite_number(point.get("value"), nonnegative=counter)
+            timestamp = _point_timestamp(point)
+            merged[timestamp] = finite_number(merged.get(timestamp, 0.0) + value)
+        except (AttributeError, TypeError, ValueError):
+            invalid += 1
+    if invalid:
+        return {"points": len(merged), "invalid_points": invalid}
+    try:
+        values = (
+            [merged[key] for key in sorted(merged)]
+            if all("timestamp" in point for point in points)
+            else list(merged.values())
+        )
+    except TypeError:
+        return {"points": len(merged), "invalid_points": len(points)}
+    if not values:
+        return {"points": 0}
+    result: dict[str, float | int] = {
+        "points": len(values),
+        "first": values[0],
+        "last": values[-1],
+        "min": min(values),
+        "max": max(values),
+    }
+    delta = counter_delta(points) if counter else values[-1] - values[0]
+    if delta is not None and math.isfinite(delta):
+        result["delta"] = delta
+    return result
+
+
+def _point_timestamp(point: Mapping[str, Any]) -> object:
+    """Validate a supplied key or give an absent timestamp a unique identity."""
+    timestamp = point.get("timestamp", object())
+    if timestamp is None or isinstance(timestamp, bool):
+        raise ValueError("timestamp must be a non-null, non-boolean key")
+    if isinstance(timestamp, (int, float)):
+        _ = finite_number(timestamp)
+    _ = hash(timestamp)
+    return timestamp
