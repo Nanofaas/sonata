@@ -234,20 +234,29 @@ def finite_number(value: object, *, nonnegative: bool = False) -> float:
 def counter_delta(points: Sequence[Mapping[str, Any]]) -> float | None:
     """Sum counter increments and resets independently for each publisher.
 
-    Full ``labels`` identify a publisher. Each needs at least two samples;
+    Full string-to-string ``labels`` identify a publisher. Each needs at least
+    two samples;
     timestamped samples sort chronologically when every sample in that
-    publisher has a timestamp, otherwise input order is used. The first
+    publisher has a timestamp, otherwise input order is used. Supplied keys
+    must be hashable, non-null/non-boolean and finite when numeric. The first
     sample establishes the baseline; a decrease contributes the new value.
     Empty, malformed, negative/nonfinite or overflowing evidence is
     unavailable (``None``), distinct from a valid zero increment.
     """
     if not points:
         return None
-    series: dict[tuple[Any, ...], list[Mapping[str, Any]]] = {}
+    series: dict[tuple[tuple[str, str], ...], list[Mapping[str, Any]]] = {}
     try:
         for point in points:
             _ = finite_number(point.get("value"), nonnegative=True)
-            key = tuple(sorted(point.get("labels", {}).items()))
+            _ = _point_timestamp(point)
+            labels = point.get("labels", {})
+            if not isinstance(labels, Mapping) or any(
+                not isinstance(key, str) or not isinstance(value, str)
+                for key, value in labels.items()
+            ):
+                return None
+            key = tuple(sorted(labels.items()))
             series.setdefault(key, []).append(point)
         total = 0.0
         for samples in series.values():
@@ -270,7 +279,8 @@ def point_stats(
 
     Samples at equal timestamps are summed. Fully timestamped inputs sort
     by their keys, which must be consistently comparable; other inputs use
-    insertion order and string-index keys for missing timestamps.
+    insertion order and distinct internal keys for missing timestamps.
+    Supplied keys must be hashable, non-null/non-boolean and finite when numeric.
     Gauges can be negative/decrease. Counter deltas use publisher labels
     before aggregation. Invalid values/sums/keys retain counts but omit
     statistics; an overflowing delta alone is omitted. Dates and time units
@@ -278,10 +288,10 @@ def point_stats(
     """
     merged: dict[Any, float] = {}
     invalid = 0
-    for index, point in enumerate(points):
+    for point in points:
         try:
             value = finite_number(point.get("value"), nonnegative=counter)
-            timestamp = point.get("timestamp", str(index))
+            timestamp = _point_timestamp(point)
             merged[timestamp] = finite_number(merged.get(timestamp, 0.0) + value)
         except (AttributeError, TypeError, ValueError):
             invalid += 1
@@ -308,3 +318,14 @@ def point_stats(
     if delta is not None and math.isfinite(delta):
         result["delta"] = delta
     return result
+
+
+def _point_timestamp(point: Mapping[str, Any]) -> object:
+    """Validate a supplied key or give an absent timestamp a unique identity."""
+    timestamp = point.get("timestamp", object())
+    if timestamp is None or isinstance(timestamp, bool):
+        raise ValueError("timestamp must be a non-null, non-boolean key")
+    if isinstance(timestamp, (int, float)):
+        _ = finite_number(timestamp)
+    _ = hash(timestamp)
+    return timestamp

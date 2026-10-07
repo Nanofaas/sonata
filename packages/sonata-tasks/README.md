@@ -309,12 +309,14 @@ standard `checks` and `http_req_failed` rate/value fields must be within 0..1.
 `finite_number` also accepts numeric strings, excluding booleans and nonfinite
 values, with optional nonnegative validation.
 
-Counter deltas group complete publisher labels and require two samples per
+Counter deltas group complete string-to-string publisher labels and require two samples per
 publisher. Timestamped publisher samples are sorted; incomplete timestamps
 retain input order. A decrease contributes the new counter value. Invalid,
 missing or overflowing evidence returns `None`, while a constant counter
 returns zero. Statistics sum equal timestamps and allow negative gauges.
 Invalid values, sums or timestamp keys produce counts and `invalid_points`
 without statistics; an unavailable or overflowing delta is omitted. Timestamp
-keys must be consistently comparable; dates and units are not parsed. Callers
+keys must be hashable and consistently comparable, non-null/non-boolean and
+finite when numeric. Missing keys have distinct internal identities and cannot
+collide with observed keys; dates and units are not parsed. Callers
 choose metrics, counter classification, time windows and qualification policy.

@@ -198,3 +198,57 @@ def test_malformed_or_unorderable_point_stats_remain_unavailable(
     result = metrics.point_stats(points)
     assert "first" not in result and "delta" not in result
     assert result["invalid_points"] >= 1
+
+
+@pytest.mark.parametrize(
+    "timestamp", [float("nan"), float("inf"), -float("inf"), True, None]
+)
+def test_malformed_timestamps_cannot_create_counter_or_gauge_evidence(timestamp):
+    points = [
+        {"timestamp": 2, "value": 5},
+        {"timestamp": timestamp, "value": 110},
+        {"timestamp": 1, "value": 100},
+    ]
+    assert metrics.counter_delta(points) is None
+    assert metrics.point_stats(points) == {"points": 2, "invalid_points": 1}
+
+
+@pytest.mark.parametrize("counter", [False, True])
+def test_missing_timestamp_never_collides_with_an_observed_index_string(counter):
+    assert metrics.point_stats(
+        [{"timestamp": "1", "value": 100}, {"value": 110}], counter=counter
+    ) == {"points": 2, "first": 100, "last": 110, "min": 100, "max": 110, "delta": 10}
+
+
+@pytest.mark.parametrize(
+    "labels", [{"worker": True}, {"worker": 1}, {"worker": None}, {1: "ordinary"}, []]
+)
+def test_labels_require_string_names_and_values_without_scalar_identity_collisions(
+    labels,
+):
+    assert (
+        metrics.counter_delta(
+            [{"labels": labels, "value": 100}, {"labels": labels, "value": 110}]
+        )
+        is None
+    )
+    assert (
+        metrics.counter_delta(
+            [
+                {"labels": {"worker": True}, "value": 100},
+                {"labels": {"worker": 1}, "value": 110},
+            ]
+        )
+        is None
+    )
+
+
+def test_datetime_timestamps_remain_supported_without_unit_normalization():
+    from datetime import UTC, datetime
+
+    points = [
+        {"timestamp": datetime(2026, 10, 7, 2, tzinfo=UTC), "value": 110},
+        {"timestamp": datetime(2026, 10, 7, 1, tzinfo=UTC), "value": 100},
+    ]
+    assert metrics.counter_delta(points) == 10
+    assert metrics.point_stats(points)["first"] == 100
