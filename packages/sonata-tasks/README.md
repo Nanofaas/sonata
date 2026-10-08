@@ -395,3 +395,27 @@ Reserve exclusive canonical absolute nonroot destinations: source and archive
 must not overlap. Providers and parent namespaces are trusted; callers coordinate
 concurrent writers. Cleanup cannot guarantee recovery after forced termination
 or a permanently unreachable target.
+
+
+### Captured Linux memory text
+
+`sonata_tasks.procfs` provides ordinary, dependency-free parsers. They accept
+captured text on any platform and do not open procfs or collect from processes.
+
+```python
+from sonata_tasks.procfs import parse_kib_field, parse_smaps
+
+rss = parse_kib_field("VmRSS: 12 kB\n", "VmRSS")  # 12288 bytes
+missing = parse_kib_field(None, "Pss")  # None, distinct from zero
+memory = parse_smaps("1000-2000 rw-p 0 00:00 0\nSize: 4 kB\nRss: 2 kB\nPss: 1 kB\n")
+assert memory["anonymous"]["rss"] == 2048
+```
+
+Smaps results contain the complete mapping inventory and byte totals for
+`anonymous`, `file`, `shared_memory` and `unknown` VMA backing. A file mapping
+with anonymous copy-on-write pages remains file-backed; these totals do not
+attribute every resident page or allocator ownership. Incomplete/malformed
+mapping records and duplicate required Size/Rss/Pss fields raise `ValueError`
+instead of yielding partial totals. Selected KiB fields likewise reject
+malformed or duplicate values while leaving missing fields as `None`.
+Callers bound captured input, select fields and choose any size thresholds.
