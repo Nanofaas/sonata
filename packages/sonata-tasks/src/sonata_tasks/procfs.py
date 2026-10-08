@@ -38,9 +38,8 @@ class SmapsResult(TypedDict):
     unknown: SmapsTotals
 
 
-_KB = re.compile(r"^(\w+):\s+(\d+) kB$", re.MULTILINE)
 _HEADER = re.compile(
-    r"^([0-9a-f]+)-([0-9a-f]+)[ \t]+([rwxps-]{4})[ \t]+"
+    r"^([0-9a-f]+)-([0-9a-f]+)[ \t]+([r-][w-][x-][ps])[ \t]+"
     r"[0-9a-f]+[ \t]+([0-9a-f]+:[0-9a-f]+)[ \t]+([0-9]+)"
     r"(?:[ \t]+(.*))?$",
     re.MULTILINE,
@@ -98,25 +97,37 @@ def parse_smaps(text: str) -> SmapsResult:
         for name in ("anonymous", "file", "shared_memory", "unknown")
     }
     records: list[SmapsMapping] = []
+    ranges: set[tuple[int, int]] = set()
     for index, header in enumerate(headers):
         end = headers[index + 1].start() if index + 1 < len(headers) else len(text)
         body = text[header.end() : end]
         # A malformed subsequent header must not silently join this record.
-        if re.search(r"^[0-9a-f]+-", body, re.MULTILINE):
+        if any(
+            line.strip() and not re.match(r"^\w+:", line) for line in body.splitlines()
+        ):
             raise ValueError("smaps contains an unrecognized mapping header")
-        pairs = _KB.findall(body)
-        fields = dict(pairs)
-        required = {"Size", "Rss", "Pss"}
-        if any(sum(name == key for name, _ in pairs) != 1 for key in required):
+        try:
+            size = parse_kib_field(body, "Size")
+            rss = parse_kib_field(body, "Rss")
+            pss = parse_kib_field(body, "Pss")
+        except ValueError as error:
+            raise ValueError(
+                "smaps mapping has malformed or duplicate Size/Rss/Pss"
+            ) from error
+        if size is None or rss is None or pss is None:
             raise ValueError("smaps mapping has missing or duplicate Size/Rss/Pss")
-        if int(header[2], 16) <= int(header[1], 16):
+        address_range = (int(header[1], 16), int(header[2], 16))
+        if address_range[1] <= address_range[0]:
             raise ValueError("invalid smaps address range")
+        if address_range in ranges:
+            raise ValueError("duplicate smaps address range")
+        ranges.add(address_range)
         path = (header[6] or "").strip()
         backed = _backing(path, header[3])
         values: SmapsTotals = {
-            "size": _kilobytes(fields["Size"]),
-            "rss": _kilobytes(fields["Rss"]),
-            "pss": _kilobytes(fields["Pss"]),
+            "size": size,
+            "rss": rss,
+            "pss": pss,
         }
         record: SmapsMapping = {
             "address": f"{header[1]}-{header[2]}",

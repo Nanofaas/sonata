@@ -118,3 +118,42 @@ def test_kib_field_rejects_malformed_and_duplicate_selected_values(text):
 
 def test_kib_field_selects_rollup_fields_without_schema():
     assert parse_kib_field("Pss_Anon: 7 kB\nPss_File: 2 kB\n", "Pss_Anon") == 7168
+
+
+_COMPLETE = "1000-2000 rw-p 0 00:00 0\nSize: 4 kB\nRss: 2 kB\nPss: 1 kB\n"
+
+
+@pytest.mark.parametrize("field", ["Size", "Rss", "Pss"])
+@pytest.mark.parametrize("invalid", ["4 MB", "-1 kB"])
+def test_malformed_duplicate_required_field_invalidates_the_whole_mapping(
+    field, invalid
+):
+    with pytest.raises(ValueError, match="smaps"):
+        parse_smaps(_COMPLETE + f"{field}: {invalid}\n")
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        _COMPLETE.replace("rw-p", "pppp"),
+        _COMPLETE.replace("rw-p", "wrxp"),
+        _COMPLETE + "g000-3000 rw-p 0 00:00 0\n",
+        _COMPLETE + "2000-g000 rw-p 0 00:00 0\n",
+    ],
+)
+def test_malformed_headers_cannot_turn_into_partial_totals(text):
+    with pytest.raises(ValueError, match="smaps"):
+        parse_smaps(text)
+
+
+@pytest.mark.parametrize(
+    "duplicate",
+    [
+        _COMPLETE,
+        _COMPLETE.replace("Rss: 2 kB", "Rss: 3 kB"),
+        _COMPLETE.replace("1000-2000", "00001000-00002000"),
+    ],
+)
+def test_repeated_address_ranges_never_double_count_memory(duplicate):
+    with pytest.raises(ValueError, match="duplicate smaps"):
+        parse_smaps(_COMPLETE + duplicate)
