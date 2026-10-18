@@ -2,7 +2,7 @@
 name = "sonata-tasks"
 license = "MIT"
 license-files = ["LICENSE"]
-version = "0.6.14"
+version = "0.6.15"
 description = "Reusable task catalogue for the Sonata workflow engine"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -20,7 +20,7 @@ classifiers = [
     "Topic :: System :: Distributed Computing",
 ]
 dependencies = [
-    "sonata-engine==0.6.14",
+    "sonata-engine==0.6.15",
 ]
 
 # PyPI shows a package page with no link home at all without these.
@@ -31,23 +31,23 @@ Issues = "https://github.com/Nanofaas/sonata/issues"
 
 [project.optional-dependencies]
 shell = [
-    "subprocess-toolkit==0.6.0",
+    "subprocess-toolkit>=0.6.0,<0.7",
 ]
 prometheus = ["httpx>=0.27"]
 multipass = [
-    "multipass-vm-sdk==0.6.0",
+    "multipass-vm-sdk>=0.6.0,<0.7",
     "pydantic>=2.9.2",
-    "subprocess-toolkit==0.6.0",
+    "subprocess-toolkit>=0.6.0,<0.7",
 ]
 azure = [
-    "azure-vm-sdk==0.6.0",
+    "azure-vm-sdk>=0.6.2,<0.7",
     "pydantic>=2.9.2",
-    "subprocess-toolkit==0.6.0",
+    "subprocess-toolkit>=0.6.0,<0.7",
 ]
 proxmox = [
-    "proxmox-vm-sdk==0.6.0",
+    "proxmox-vm-sdk>=0.6.0,<0.7",
     "pydantic>=2.9.2",
-    "subprocess-toolkit==0.6.0",
+    "subprocess-toolkit>=0.6.0,<0.7",
 ]
 
 [build-system]

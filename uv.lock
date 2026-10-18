@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.12"
 
 [manifest]
@@ -32,15 +32,15 @@ wheels = [
 
 [[package]]
 name = "azure-vm-sdk"
-version = "0.6.0"
+version = "0.6.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "paramiko" },
     { name = "pyyaml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/57/75/71d6acc4ba54d0085e35646117f1141bd67be3463732879e47ff43d809c9/azure_vm_sdk-0.6.0.tar.gz", hash = "sha256:b22bdaab69cbe8abdd8fba0fa0ad94a3fb37ab796839119ba360048ebd82204c", size = 133810, upload-time = "2026-09-20T13:39:22.146Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/03/13/ec312f2f1a163ec8a9a5b41e49bfc3075d9c276d00edeb2a03d0aed9b01a/azure_vm_sdk-0.6.2.tar.gz", hash = "sha256:2a99ed850532908a6d9b910e067f6763dfaa55897bdef43358ad87b2f923c478", size = 136379, upload-time = "2026-10-18T08:35:42.624Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/69/04/7ed887c5a268f0c97f6201891c0905d59dcf8dda70a46c012f47860f9cc5/azure_vm_sdk-0.6.0-py3-none-any.whl", hash = "sha256:5c12b8c91ceb3559e3d74b2006c75222f14e6ab1ef25d96c28d450d28abce0c8", size = 34154, upload-time = "2026-09-20T13:39:20.609Z" },
+    { url = "https://files.pythonhosted.org/packages/7a/ae/63245ee90c21513fb68648dbd89f64b6d1aa4cabc879cf42c7caa7d4bdbf/azure_vm_sdk-0.6.2-py3-none-any.whl", hash = "sha256:2d2a0d6aeac821c455ba8f83222935efa51f7ccea6daf3dc4419059b0420b630", size = 34620, upload-time = "2026-10-18T08:35:41.248Z" },
 ]
 
 [[package]]
@@ -1128,7 +1128,7 @@ wheels = [
 
 [[package]]
 name = "sonata-engine"
-version = "0.6.14"
+version = "0.6.15"
 source = { editable = "." }
 
 [package.dev-dependencies]
@@ -1155,7 +1155,7 @@ dev = [
 
 [[package]]
 name = "sonata-tasks"
-version = "0.6.14"
+version = "0.6.15"
 source = { editable = "packages/sonata-tasks" }
 dependencies = [
     { name = "sonata-engine" },
@@ -1199,18 +1199,18 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "azure-vm-sdk", marker = "extra == 'azure'", specifier = "==0.6.0" },
+    { name = "azure-vm-sdk", marker = "extra == 'azure'", specifier = ">=0.6.2,<0.7" },
     { name = "httpx", marker = "extra == 'prometheus'", specifier = ">=0.27" },
-    { name = "multipass-vm-sdk", marker = "extra == 'multipass'", specifier = "==0.6.0" },
-    { name = "proxmox-vm-sdk", marker = "extra == 'proxmox'", specifier = "==0.6.0" },
+    { name = "multipass-vm-sdk", marker = "extra == 'multipass'", specifier = ">=0.6.0,<0.7" },
+    { name = "proxmox-vm-sdk", marker = "extra == 'proxmox'", specifier = ">=0.6.0,<0.7" },
     { name = "pydantic", marker = "extra == 'azure'", specifier = ">=2.9.2" },
     { name = "pydantic", marker = "extra == 'multipass'", specifier = ">=2.9.2" },
     { name = "pydantic", marker = "extra == 'proxmox'", specifier = ">=2.9.2" },
     { name = "sonata-engine", editable = "." },
-    { name = "subprocess-toolkit", marker = "extra == 'azure'", specifier = "==0.6.0" },
-    { name = "subprocess-toolkit", marker = "extra == 'multipass'", specifier = "==0.6.0" },
-    { name = "subprocess-toolkit", marker = "extra == 'proxmox'", specifier = "==0.6.0" },
-    { name = "subprocess-toolkit", marker = "extra == 'shell'", specifier = "==0.6.0" },
+    { name = "subprocess-toolkit", marker = "extra == 'azure'", specifier = ">=0.6.0,<0.7" },
+    { name = "subprocess-toolkit", marker = "extra == 'multipass'", specifier = ">=0.6.0,<0.7" },
+    { name = "subprocess-toolkit", marker = "extra == 'proxmox'", specifier = ">=0.6.0,<0.7" },
+    { name = "subprocess-toolkit", marker = "extra == 'shell'", specifier = ">=0.6.0,<0.7" },
 ]
 provides-extras = ["shell", "prometheus", "multipass", "azure", "proxmox"]
 
