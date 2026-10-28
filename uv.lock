@@ -32,15 +32,15 @@ wheels = [
 
 [[package]]
 name = "azure-vm-sdk"
-version = "0.7.0"
+version = "0.8.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "paramiko" },
     { name = "pyyaml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/6c/42/a95aed13230777b3e8ae344ee0a193f2bff53e5871b45ec0b64f9f5b5733/azure_vm_sdk-0.7.0.tar.gz", hash = "sha256:fe5322c56f47ad8b1bf9d692234fe15c9883f2d97a9ea841e4428ef5158dd923", size = 149645, upload-time = "2026-10-22T12:02:46.149Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/dd/11/d4cb3ad6271f7191a03aec624e7c696deea7a99c63ed302b579b1db969bb/azure_vm_sdk-0.8.0.tar.gz", hash = "sha256:deec2d037621cc61b00dedc32f0f5ad1a276d5b3d7448ba737220f4f4420ba0a", size = 155064, upload-time = "2026-10-24T08:23:24.821Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/9c/ee/e239a46cf809a7b9712855dd80db9412d0afcf4abdc029568b3628c2761f/azure_vm_sdk-0.7.0-py3-none-any.whl", hash = "sha256:5ecf16c4b46d1c11a5c04a1aeaf3248a2126a0e7692b7a26f45b5c11720d109f", size = 41738, upload-time = "2026-10-22T12:02:44.454Z" },
+    { url = "https://files.pythonhosted.org/packages/d9/b0/87dd93a3ac379cd9bf0d0af3bbd2d45607e63184dc66167a9acfe89eeb72/azure_vm_sdk-0.8.0-py3-none-any.whl", hash = "sha256:ab5c88dba5d1e41cf005cabe716ab496edaea072fa22c92af620e10dcd6780a6", size = 44512, upload-time = "2026-10-24T08:23:23.56Z" },
 ]
 
 [[package]]
@@ -1128,7 +1128,7 @@ wheels = [
 
 [[package]]
 name = "sonata-engine"
-version = "0.6.16"
+version = "0.6.17"
 source = { editable = "." }
 
 [package.dev-dependencies]
@@ -1155,7 +1155,7 @@ dev = [
 
 [[package]]
 name = "sonata-tasks"
-version = "0.6.16"
+version = "0.6.17"
 source = { editable = "packages/sonata-tasks" }
 dependencies = [
     { name = "sonata-engine" },
@@ -1199,7 +1199,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "azure-vm-sdk", marker = "extra == 'azure'", specifier = ">=0.6.2,<0.8" },
+    { name = "azure-vm-sdk", marker = "extra == 'azure'", specifier = ">=0.8.0,<0.9" },
     { name = "httpx", marker = "extra == 'prometheus'", specifier = ">=0.27" },
     { name = "multipass-vm-sdk", marker = "extra == 'multipass'", specifier = ">=0.6.0,<0.7" },
     { name = "proxmox-vm-sdk", marker = "extra == 'proxmox'", specifier = ">=0.6.0,<0.7" },

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import importlib
 import importlib.util
 import json
@@ -86,8 +87,9 @@ def test_symlink_target_cannot_redirect_writes(tmp_path):
     outside.write_text("unchanged")
     writer = writer_for(root)
     (root / "events.jsonl").symlink_to(outside)
-    with pytest.raises(OSError, match="Errno 40"):
+    with pytest.raises(OSError) as error:
         writer.append("events", {"value": 1})
+    assert error.value.errno == errno.ELOOP
     assert outside.read_text() == "unchanged"
     writer.close()
 
