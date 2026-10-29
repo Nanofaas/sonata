@@ -603,3 +603,51 @@ def test_ingress_refuses_missing_or_invalid_topology(
             _make_request(), ports=(30080,), source_cidrs=("198.51.100.1/32",)
         )
     assert all("create" not in call.args[0] for call in mock_run.call_args_list)
+
+
+_ASSOCIATED_NSG_ID = (
+    "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/"
+    "networkSecurityGroups/policy"
+)
+
+
+@pytest.mark.parametrize(
+    ("details", "subnet_response"),
+    [
+        ({"nsg": _ASSOCIATED_NSG_ID}, None),
+        ({"nsg": _ASSOCIATED_NSG_ID, "subnets": {}}, None),
+        ({"nsg": _ASSOCIATED_NSG_ID, "subnets": None}, None),
+        (
+            {
+                "nsg": _ASSOCIATED_NSG_ID.replace(
+                    "Microsoft.Network", "Microsoft.Compute"
+                ),
+                "subnets": [],
+            },
+            None,
+        ),
+        ({"nsg": _ASSOCIATED_NSG_ID.replace("/rg/", "//"), "subnets": []}, None),
+        ({"nsg": None, "subnets": ["subnet"]}, {}),
+    ],
+)
+@patch("sonata_tasks.vm.providers.azure.subprocess.run")
+def test_malformed_associations_never_write_rules(
+    mock_run, details, subnet_response
+) -> None:
+    def run(argv, **kwargs):
+        if argv[1:3] == ["vm", "show"]:
+            value = ["nic"]
+        elif argv[1:4] == ["network", "nic", "show"]:
+            value = details
+        elif argv[1:5] == ["network", "vnet", "subnet", "show"]:
+            value = subnet_response
+        else:
+            value = ["198.51.100.1/32"]
+        return SimpleNamespace(returncode=0, stdout=json.dumps(value), stderr="")
+
+    mock_run.side_effect = run
+    with pytest.raises(RuntimeError, match="invalid"):
+        _make_provider().restrict_inbound_sources(
+            _make_request(), ports=(30080,), source_cidrs=("198.51.100.1/32",)
+        )
+    assert all("create" not in call.args[0] for call in mock_run.call_args_list)

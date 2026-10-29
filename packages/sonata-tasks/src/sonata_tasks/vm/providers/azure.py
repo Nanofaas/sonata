@@ -290,7 +290,9 @@ class AzureVmProvider:
                 "json",
             ]
         )
-        if not isinstance(nics, list):
+        if not isinstance(nics, list) or not all(
+            isinstance(nic, str) and nic for nic in nics
+        ):
             raise RuntimeError("Azure VM network interfaces response is invalid")
         groups: set[str] = set()
         for nic in nics:
@@ -308,14 +310,22 @@ class AzureVmProvider:
                     "json",
                 ]
             )
-            if not isinstance(details, dict):
+            if (
+                not isinstance(details, dict)
+                or not {"nsg", "subnets"} <= details.keys()
+            ):
                 raise RuntimeError("Azure NIC response is invalid")
-            if details.get("nsg"):
-                groups.add(str(details["nsg"]))
-            subnets = details.get("subnets") or []
-            if not isinstance(subnets, list):
+            group = details["nsg"]
+            if group is not None:
+                if not isinstance(group, str) or not group:
+                    raise RuntimeError("Azure NIC NSG response is invalid")
+                groups.add(group)
+            subnets = details["subnets"]
+            if not isinstance(subnets, list) or not all(
+                isinstance(subnet, str) and subnet for subnet in subnets
+            ):
                 raise RuntimeError("Azure NIC subnets response is invalid")
-            for subnet in set(map(str, subnets)):
+            for subnet in set(subnets):
                 group = self._az_json(
                     [
                         "az",
@@ -331,16 +341,23 @@ class AzureVmProvider:
                         "json",
                     ]
                 )
-                if group:
-                    groups.add(str(group))
+                if group is not None:
+                    if not isinstance(group, str) or not group:
+                        raise RuntimeError("Azure subnet NSG response is invalid")
+                    groups.add(group)
         if not groups:
             raise RuntimeError("Azure VM has no attached NSG")
         result = []
         for group in sorted(groups):
-            parts = group.split("/")
-            if len(parts) != 9 or parts[7].lower() != "networksecuritygroups":
+            match = re.fullmatch(
+                r"/subscriptions/[^/]+/resourceGroups/([^/]+)/providers/"
+                r"Microsoft\.Network/networkSecurityGroups/([^/]+)",
+                group,
+                flags=re.IGNORECASE,
+            )
+            if match is None:
                 raise RuntimeError("Azure attached NSG identity is invalid")
-            result.append((parts[4], parts[8]))
+            result.append((match.group(1), match.group(2)))
         return tuple(result)
 
     def restrict_inbound_sources(
