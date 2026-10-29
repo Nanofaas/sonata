@@ -6,6 +6,8 @@ import errno
 import importlib
 import importlib.util
 import json
+import os
+import re
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Event
@@ -87,7 +89,7 @@ def test_symlink_target_cannot_redirect_writes(tmp_path):
     outside.write_text("unchanged")
     writer = writer_for(root)
     (root / "events.jsonl").symlink_to(outside)
-    with pytest.raises(OSError) as error:
+    with pytest.raises(OSError, match=re.escape(os.strerror(errno.ELOOP))) as error:
         writer.append("events", {"value": 1})
     assert error.value.errno == errno.ELOOP
     assert outside.read_text() == "unchanged"

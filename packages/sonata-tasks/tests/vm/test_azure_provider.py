@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -252,8 +253,15 @@ def test_release_facts_are_read_from_authoritative_azure_state(mock_run) -> None
     assert command[-2:] == ["--output", "json"]
 
 
+@patch.object(
+    AzureVmProvider,
+    "_attached_nsgs",
+    return_value=(("nanofaas-rg", "nanofaas-azure-release-nsg"),),
+)
 @patch("sonata_tasks.vm.providers.azure.subprocess.run")
-def test_release_nsg_rules_are_restricted_to_explicit_sources(mock_run) -> None:
+def test_release_nsg_rules_are_restricted_to_explicit_sources(
+    mock_run, mock_nsgs
+) -> None:
     sources = ("198.51.100.42/32", "203.0.113.0/24")
     process = MagicMock()
     process.returncode = 0
@@ -292,9 +300,15 @@ def test_release_nsg_rules_are_restricted_to_explicit_sources(mock_run) -> None:
         )
 
 
+@patch.object(
+    AzureVmProvider,
+    "_attached_nsgs",
+    return_value=(("nanofaas-rg", "nanofaas-azure-release-nsg"),),
+)
 @patch("sonata_tasks.vm.providers.azure.subprocess.run")
 def test_release_nsg_restriction_fails_closed_on_mismatched_azure_response(
     mock_run,
+    mock_nsgs,
 ) -> None:
     process = MagicMock()
     process.returncode = 0
@@ -511,3 +525,81 @@ def test_teardown_fails_when_tofu_destroy_left_the_vm_behind(
 
     vm_mock.delete.assert_called_once()
     assert result.return_code != 0
+
+
+@pytest.mark.parametrize("attachment", ["nic", "subnet", "both"])
+@patch("sonata_tasks.vm.providers.azure.subprocess.run")
+def test_ingress_uses_actual_associated_nsgs(mock_run, attachment: str) -> None:
+    prefix = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network"
+    nic = prefix + "/networkInterfaces/nic"
+    subnet = prefix + "/virtualNetworks/net/subnets/default"
+    groups = {
+        "nic": prefix.replace("/rg/", "/shared/") + "/networkSecurityGroups/reused",
+        "subnet": prefix + "/networkSecurityGroups/subnet-policy",
+    }
+    sources = ["198.51.100.1/32"]
+
+    def run(argv, **kwargs):
+        if argv[1:3] == ["vm", "show"]:
+            value = [nic]
+        elif argv[1:4] == ["network", "nic", "show"]:
+            value = {
+                "nsg": groups["nic"] if attachment in {"nic", "both"} else None,
+                "subnets": [subnet],
+            }
+        elif argv[1:5] == ["network", "vnet", "subnet", "show"]:
+            value = groups["subnet"] if attachment in {"subnet", "both"} else None
+        else:
+            assert argv[1:5] == ["network", "nsg", "rule", "create"]
+            value = sources
+        return SimpleNamespace(
+            returncode=0, stdout="" if value is None else json.dumps(value), stderr=""
+        )
+
+    mock_run.side_effect = run
+    _make_provider().restrict_inbound_sources(
+        _make_request(), ports=(30080,), source_cidrs=tuple(sources)
+    )
+    writes = [
+        call.args[0] for call in mock_run.call_args_list if "create" in call.args[0]
+    ]
+    expected = {"nic", "subnet"} if attachment == "both" else {attachment}
+    assert {argv[argv.index("--nsg-name") + 1] for argv in writes} == {
+        groups[key].rsplit("/", 1)[-1] for key in expected
+    }
+    for argv in writes:
+        name = argv[argv.index("--nsg-name") + 1]
+        assert argv[argv.index("--resource-group") + 1] == (
+            "shared" if name == "reused" else "rg"
+        )
+
+
+@pytest.mark.parametrize("ports", [(), (0,), (65536,)])
+@patch("sonata_tasks.vm.providers.azure.subprocess.run")
+def test_ingress_validates_all_ports_before_azure(mock_run, ports) -> None:
+    provider = _make_provider()
+    if ports:
+        with pytest.raises(ValueError, match="invalid Azure NSG port"):
+            provider.restrict_inbound_sources(
+                _make_request(), ports=ports, source_cidrs=("198.51.100.1/32",)
+            )
+    else:
+        provider.restrict_inbound_sources(
+            _make_request(), ports=ports, source_cidrs=("198.51.100.1/32",)
+        )
+    mock_run.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("response", "message"), [("[]", "no attached NSG"), ("{", "invalid JSON")]
+)
+@patch("sonata_tasks.vm.providers.azure.subprocess.run")
+def test_ingress_refuses_missing_or_invalid_topology(
+    mock_run, response, message
+) -> None:
+    mock_run.return_value = SimpleNamespace(returncode=0, stdout=response, stderr="")
+    with pytest.raises(RuntimeError, match=message):
+        _make_provider().restrict_inbound_sources(
+            _make_request(), ports=(30080,), source_cidrs=("198.51.100.1/32",)
+        )
+    assert all("create" not in call.args[0] for call in mock_run.call_args_list)

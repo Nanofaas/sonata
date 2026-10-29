@@ -273,6 +273,76 @@ class AzureVmProvider:
         except (KeyError, TypeError, ValueError) as error:
             raise RuntimeError("Azure VM facts response is invalid") from error
 
+    def _attached_nsgs(self, request: VmRequest) -> tuple[tuple[str, str], ...]:
+        """Resolve every NIC/subnet NSG without assuming the SDK's naming scheme."""
+        nics = self._az_json(
+            [
+                "az",
+                "vm",
+                "show",
+                "--resource-group",
+                str(request.azure_resource_group),
+                "--name",
+                self._vm_name(request),
+                "--query",
+                "networkProfile.networkInterfaces[].id",
+                "--output",
+                "json",
+            ]
+        )
+        if not isinstance(nics, list):
+            raise RuntimeError("Azure VM network interfaces response is invalid")
+        groups: set[str] = set()
+        for nic in nics:
+            details = self._az_json(
+                [
+                    "az",
+                    "network",
+                    "nic",
+                    "show",
+                    "--ids",
+                    str(nic),
+                    "--query",
+                    "{nsg:networkSecurityGroup.id,subnets:ipConfigurations[].subnet.id}",
+                    "--output",
+                    "json",
+                ]
+            )
+            if not isinstance(details, dict):
+                raise RuntimeError("Azure NIC response is invalid")
+            if details.get("nsg"):
+                groups.add(str(details["nsg"]))
+            subnets = details.get("subnets") or []
+            if not isinstance(subnets, list):
+                raise RuntimeError("Azure NIC subnets response is invalid")
+            for subnet in set(map(str, subnets)):
+                group = self._az_json(
+                    [
+                        "az",
+                        "network",
+                        "vnet",
+                        "subnet",
+                        "show",
+                        "--ids",
+                        subnet,
+                        "--query",
+                        "networkSecurityGroup.id",
+                        "--output",
+                        "json",
+                    ]
+                )
+                if group:
+                    groups.add(str(group))
+        if not groups:
+            raise RuntimeError("Azure VM has no attached NSG")
+        result = []
+        for group in sorted(groups):
+            parts = group.split("/")
+            if len(parts) != 9 or parts[7].lower() != "networksecuritygroups":
+                raise RuntimeError("Azure attached NSG identity is invalid")
+            result.append((parts[4], parts[8]))
+        return tuple(result)
+
     def restrict_inbound_sources(
         self,
         request: VmRequest,
@@ -281,7 +351,7 @@ class AzureVmProvider:
         source_cidrs: tuple[str, ...],
         priority_base: int = 1010,
     ) -> None:
-        """Allow the given ports from ``source_cidrs`` on the VM's NSG.
+        """Allow these ports/sources on every NSG attached to the VM.
 
         One inbound TCP rule is created per port, named after it with priority
         ascending from ``priority_base``. Source CIDRs are normalized and
@@ -300,52 +370,58 @@ class AzureVmProvider:
         sources = tuple(dict.fromkeys(map(str, networks)))
         if not sources:
             raise ValueError("at least one Azure NSG source CIDR is required")
-        for index, port in enumerate(sorted(set(ports))):
+        for port in ports:
             if not 1 <= port <= 65535:
                 raise ValueError(f"invalid Azure NSG port: {port}")
-            payload = self._az_json(
-                [
-                    "az",
-                    "network",
-                    "nsg",
-                    "rule",
-                    "create",
-                    "--resource-group",
-                    resource_group,
-                    "--nsg-name",
-                    f"{self._vm_name(request)}-nsg",
-                    "--name",
-                    f"Port{port}",
-                    "--priority",
-                    str(priority_base + index),
-                    "--direction",
-                    "Inbound",
-                    "--access",
-                    "Allow",
-                    "--protocol",
-                    "Tcp",
-                    "--destination-port-ranges",
-                    str(port),
-                    "--source-address-prefixes",
-                    *sources,
-                    "--query",
-                    # A single source lands in the singular sourceAddressPrefix
-                    # field and leaves the plural empty ([] is falsy in JMESPath).
-                    "sourceAddressPrefixes || [sourceAddressPrefix]",
-                    "--output",
-                    "json",
-                ]
-            )
-            if not isinstance(payload, list) or set(map(str, payload)) != set(sources):
-                raise RuntimeError("Azure NSG source restriction mismatch")
+        if not ports:
+            return
+        for nsg_group, nsg_name in self._attached_nsgs(request):
+            for index, port in enumerate(sorted(set(ports))):
+                payload = self._az_json(
+                    [
+                        "az",
+                        "network",
+                        "nsg",
+                        "rule",
+                        "create",
+                        "--resource-group",
+                        nsg_group,
+                        "--nsg-name",
+                        nsg_name,
+                        "--name",
+                        f"Port{port}",
+                        "--priority",
+                        str(priority_base + index),
+                        "--direction",
+                        "Inbound",
+                        "--access",
+                        "Allow",
+                        "--protocol",
+                        "Tcp",
+                        "--destination-port-ranges",
+                        str(port),
+                        "--source-address-prefixes",
+                        *sources,
+                        "--query",
+                        # A single source lands in the singular sourceAddressPrefix
+                        # field and leaves the plural empty ([] is falsy in JMESPath).
+                        "sourceAddressPrefixes || [sourceAddressPrefix]",
+                        "--output",
+                        "json",
+                    ]
+                )
+                if not isinstance(payload, list) or set(map(str, payload)) != set(
+                    sources
+                ):
+                    raise RuntimeError("Azure NSG source restriction mismatch")
 
     @staticmethod
     def _az_json(argv: list[str]) -> object:
-        process = subprocess.run(argv, capture_output=True, text=True)
+        process = subprocess.run(argv, capture_output=True, text=True, timeout=60)
         if process.returncode != 0:
             raise RuntimeError(process.stderr or "Azure CLI command failed")
         try:
-            return json.loads(process.stdout)
+            return json.loads(process.stdout) if process.stdout.strip() else None
         except json.JSONDecodeError as error:
             raise RuntimeError("Azure CLI returned invalid JSON") from error
 
