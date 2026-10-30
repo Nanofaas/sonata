@@ -208,6 +208,9 @@ class AzureVmProvider:
             "ssh_key_path": request.azure_ssh_key_path,
             "open_ports": request.azure_open_ports,
             "disk_size_gb": _disk_size_gb(request.disk),
+            "priority": request.azure_priority,
+            "eviction_policy": request.azure_eviction_policy,
+            "max_bid_price": request.azure_max_bid_price,
         }
         # The SDK decides "already running" from the local tofu workspace, whose
         # `vm_state` output merely echoes the `desired_state` input variable. A VM
@@ -215,13 +218,50 @@ class AzureVmProvider:
         # interrupted teardown -- therefore reports RUNNING forever and
         # ensure_running returns without touching Azure. Ask Azure, which is the
         # authority, and force a converging apply when the workspace is lying.
+        exists = self._exists_in_azure(request)
+        if exists and request.azure_priority == "Spot":
+            self._verify_spot_settings(request)
         vm = (
             client.ensure_running(name, **parameters)
-            if self._exists_in_azure(request)
+            if exists
             else client.launch(name, **parameters)
         )
+        if not exists and request.azure_priority == "Spot":
+            self._verify_spot_settings(request)
         self._vms[self._vm_key(request)] = vm
         return successful_result(["azure", "ensure_running", name])
+
+    def _verify_spot_settings(self, request: VmRequest) -> None:
+        facts = self._az_json(
+            [
+                "az",
+                "vm",
+                "show",
+                "--resource-group",
+                request.azure_resource_group or "",
+                "--name",
+                self._vm_name(request),
+                "--query",
+                "{priority:priority,evictionPolicy:evictionPolicy,"
+                "maxPrice:billingProfile.maxPrice}",
+                "--output",
+                "json",
+            ]
+        )
+        expected = {
+            "priority": "Spot",
+            "evictionPolicy": request.azure_eviction_policy or "Delete",
+            "maxPrice": (
+                -1
+                if request.azure_max_bid_price is None
+                else request.azure_max_bid_price
+            ),
+        }
+        if facts != expected:
+            raise RuntimeError(
+                f"Azure VM {self._vm_name(request)} does not match requested Spot "
+                f"settings: expected {expected}, got {facts}. Use a new VM name."
+            )
 
     def release_vm_facts(self, request: VmRequest) -> AzureVmFacts:
         """Read the deployed VM's location, size, disk, and image from Azure.

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, Self
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +52,11 @@ class VmRequest(BaseModel):
     azure_image_urn: str | None = None
     azure_ssh_key_path: str | None = None
     azure_open_ports: tuple[int, ...] | None = None
+    azure_priority: Literal["Regular", "Spot"] = "Regular"
+    azure_eviction_policy: Literal["Delete", "Deallocate"] | None = None
+    azure_max_bid_price: float | None = Field(
+        default=None, strict=True, allow_inf_nan=False
+    )
     proxmox_host: str | None = None
     proxmox_node: str | None = None
     proxmox_user: str | None = None
@@ -68,6 +73,14 @@ class VmRequest(BaseModel):
         """
         if self.lifecycle == "external" and not self.host:
             raise ValueError("host is required for external lifecycle")
+        if self.azure_priority != "Spot" and (
+            self.azure_eviction_policy is not None
+            or self.azure_max_bid_price is not None
+        ):
+            raise ValueError("eviction_policy and max_bid_price require Spot priority")
+        price = self.azure_max_bid_price
+        if price is not None and price != -1 and price < 0:
+            raise ValueError("max_bid_price must be -1 or non-negative")
         return self
 
 
