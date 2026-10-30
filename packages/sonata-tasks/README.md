@@ -4,6 +4,15 @@ Reusable, product-independent tasks for `sonata-engine`. The base installation
 contains command execution contracts and common command-line tool tasks.
 Provider and transport integrations are installed through optional extras.
 
+Managed Azure VM requests accept `azure_priority="Spot"`,
+`azure_eviction_policy="Deallocate"` and `azure_max_bid_price=-1` through
+`sonata_tasks.vm.models.VmRequest`. The existing provider forwards these to
+`azure-vm-sdk`; the default remains Regular. For Spot requests it checks the
+live Azure policy before reusing a VM and after creating one, refusing a
+mismatch rather than adopting ordinary capacity. Omitted Spot policy/bid use
+the SDK defaults (`Delete` and `-1`). Provisioning failures propagate to the
+caller; this does not add automatic eviction recovery or capacity fallback.
+
 The base catalogue includes Kubernetes namespace ownership, port forwarding,
 Pod and OCI image inspection, and Minikube profile preflight in
 `sonata_tasks.kubectl`, `sonata_tasks.imagetools`, and `sonata_tasks.minikube`.
