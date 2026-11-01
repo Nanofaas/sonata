@@ -52,6 +52,9 @@ class VmRequest(BaseModel):
     azure_image_urn: str | None = None
     azure_ssh_key_path: str | None = None
     azure_open_ports: tuple[int, ...] | None = None
+    # Port -> source CIDRs: NSG rules admitting each port only from its sources,
+    # rendered by azure-vm-sdk into the OpenTofu-managed NSG at creation.
+    azure_ingress: dict[int, tuple[str, ...]] | None = None
     azure_priority: Literal["Regular", "Spot"] = "Regular"
     azure_eviction_policy: Literal["Delete", "Deallocate"] | None = None
     azure_max_bid_price: float | None = Field(
@@ -81,6 +84,9 @@ class VmRequest(BaseModel):
         price = self.azure_max_bid_price
         if price is not None and price != -1 and price < 0:
             raise ValueError("max_bid_price must be -1 or non-negative")
+        both = sorted(set(self.azure_open_ports or ()) & set(self.azure_ingress or {}))
+        if both:
+            raise ValueError(f"ports both open and restricted: {both}")
         return self
 
 

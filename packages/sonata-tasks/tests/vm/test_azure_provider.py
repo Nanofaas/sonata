@@ -9,6 +9,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+from azure_vm import IngressRule
 
 from sonata_tasks.vm.models import VmRequest
 from sonata_tasks.vm.providers.azure import AzureVmProvider
@@ -208,6 +209,55 @@ def test_ensure_running_forwards_request_disk_as_gibibytes(
     provider.ensure_running(_make_request(disk="128G"))
 
     assert client_mock.ensure_running.call_args.kwargs["disk_size_gb"] == 128
+
+
+@pytest.mark.parametrize("exists", [True, False])
+@patch("sonata_tasks.vm.providers.azure.AzureVmProvider._exists_in_azure")
+@patch("sonata_tasks.vm.providers.azure.AzureClient")
+def test_ensure_running_forwards_ingress_as_sdk_rules(
+    mock_client_cls, mock_exists, exists
+) -> None:
+    mock_exists.return_value = exists
+    client_mock = MagicMock()
+    mock_client_cls.return_value = client_mock
+
+    _make_provider().ensure_running(
+        _make_request(
+            azure_ingress={
+                9090: ("198.51.100.7/32",),
+                8080: ("198.51.100.7/32", "203.0.113.0/24"),
+            }
+        )
+    )
+
+    call = client_mock.ensure_running if exists else client_mock.launch
+    assert call.call_args.kwargs["ingress"] == (
+        IngressRule(8080, ("198.51.100.7/32", "203.0.113.0/24")),
+        IngressRule(9090, ("198.51.100.7/32",)),
+    )
+
+
+@patch(
+    "sonata_tasks.vm.providers.azure.AzureVmProvider._exists_in_azure",
+    return_value=True,
+)
+@patch("sonata_tasks.vm.providers.azure.AzureClient")
+def test_ensure_running_without_ingress_passes_none(
+    mock_client_cls, mock_exists
+) -> None:
+    client_mock = MagicMock()
+    mock_client_cls.return_value = client_mock
+
+    _make_provider().ensure_running(_make_request())
+
+    assert client_mock.ensure_running.call_args.kwargs["ingress"] is None
+
+
+def test_request_refuses_a_port_both_open_and_restricted() -> None:
+    with pytest.raises(ValueError, match="both open and restricted"):
+        _make_request(
+            azure_open_ports=(8080,), azure_ingress={8080: ("198.51.100.7/32",)}
+        )
 
 
 @patch("sonata_tasks.vm.providers.azure.subprocess.run")
