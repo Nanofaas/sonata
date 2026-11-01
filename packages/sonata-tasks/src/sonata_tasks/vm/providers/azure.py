@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from azure_vm import AzureClient, AzureVM
+from azure_vm import AzureClient, AzureVM, IngressRule
 from azure_vm.exceptions import VmNotFoundError
 from subprocess_toolkit.backend import ShellExecutionResult
 
@@ -207,6 +207,14 @@ class AzureVmProvider:
             "image_urn": request.azure_image_urn,
             "ssh_key_path": request.azure_ssh_key_path,
             "open_ports": request.azure_open_ports,
+            "ingress": (
+                tuple(
+                    IngressRule(port, tuple(sources))
+                    for port, sources in sorted(request.azure_ingress.items())
+                )
+                if request.azure_ingress
+                else None
+            ),
             "disk_size_gb": _disk_size_gb(request.disk),
             "priority": request.azure_priority,
             "eviction_policy": request.azure_eviction_policy,
@@ -409,6 +417,13 @@ class AzureVmProvider:
         priority_base: int = 1010,
     ) -> None:
         """Allow these ports/sources on every NSG attached to the VM.
+
+        For sources known before the VM exists, prefer ``azure_ingress`` on the
+        request: the SDK renders those rules into the OpenTofu-managed NSG. This
+        method rewrites rules with the Azure CLI after creation, for sources
+        learned later or NSGs the SDK does not manage, and those rewrites are
+        outside the workspace state. A rule is named after its port alone, so a
+        second call for the same port replaces the first call's sources.
 
         One inbound TCP rule is created per port, named after it with priority
         ascending from ``priority_base``. Source CIDRs are normalized and
