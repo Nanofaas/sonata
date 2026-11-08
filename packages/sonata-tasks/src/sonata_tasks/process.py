@@ -6,9 +6,9 @@ import subprocess
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Protocol, overload
+from typing import Any, Protocol, overload, override
 
-from sonata_engine import Resource, TaskInputs
+from sonata_engine import Resource, Task, TaskInputs, TaskOutcome
 from sonata_tasks.compensation import best_effort
 from sonata_tasks.owned_process import OwnedCommandResult as OwnedCommandResult
 from sonata_tasks.owned_process import OwnedCommandRunner as OwnedCommandRunner
@@ -33,6 +33,31 @@ class ManagedProcess(Protocol):
     def wait(self, timeout: float | None = None) -> int:
         """Block until the process exits and return its exit code."""
         ...
+
+
+class _Acquire(Task[ManagedProcess]):
+    def __init__(
+        self, title: str, body: Callable[[TaskInputs], ManagedProcess]
+    ) -> None:
+        self.title = title
+        self._body = body
+
+    @override
+    def run(self, inputs: TaskInputs) -> TaskOutcome[ManagedProcess]:
+        return TaskOutcome(value=self._body(inputs))
+
+
+class _Release(Task[None]):
+    def __init__(
+        self, title: str, body: Callable[[TaskInputs, ManagedProcess], object]
+    ) -> None:
+        self.title = title
+        self._body = body
+
+    @override
+    def run(self, inputs: TaskInputs) -> TaskOutcome[None]:
+        _ = self._body(inputs, inputs.upstream())
+        return TaskOutcome(value=None)
 
 
 @overload
@@ -161,4 +186,9 @@ def managed_process_resource(
     # always_release on purpose: `keep` holds on to everything that did not ask to
     # be released, and a spawned child process that outlives the run is a leak, not
     # something a user asked to keep. A process always gets stopped.
-    return Resource(title=title, acquire=acquire, release=stop, always_release=True)
+    return Resource(
+        title=title,
+        acquire=_Acquire(title, acquire),
+        release=_Release(f"Release {title.removeprefix('Acquire ')}", stop),
+        always_release=True,
+    )

@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import override
 
 import pytest
@@ -46,7 +46,7 @@ def test_acquire_runs_socat_tunnel_with_upstream_host():
         **TUNNEL_OPTIONS,
     )
 
-    resource.acquire(TaskInputs.empty())
+    resource.acquire.run(TaskInputs.empty())
 
     assert len(provider.calls) == 3
     assert all(seen_request is request for seen_request, _argv in provider.calls)
@@ -87,7 +87,7 @@ def test_acquire_tolerates_an_absent_previous_transient_unit():
         **TUNNEL_OPTIONS,
     )
 
-    resource.acquire(TaskInputs.empty())
+    resource.acquire.run(TaskInputs.empty())
 
 
 def test_release_stops_the_tunnel():
@@ -99,8 +99,8 @@ def test_release_stops_the_tunnel():
         **TUNNEL_OPTIONS,
     )
 
-    resource.acquire(TaskInputs.empty())
-    resource.release(TaskInputs.empty(), None)
+    resource.acquire.run(TaskInputs.empty())
+    resource.release.run(replace(TaskInputs.empty(), _upstream=None))
 
     assert len(provider.calls) == 5
     _req, argv = provider.calls[3]
@@ -120,7 +120,7 @@ def test_acquire_raises_and_compensates_on_each_failed_step(fail_on: int, calls:
     )
 
     with pytest.raises(RuntimeError, match="registry tunnel acquire failed"):
-        resource.acquire(TaskInputs.empty())
+        resource.acquire.run(TaskInputs.empty())
 
     assert len(provider.calls) == calls
     assert provider.calls[-2][1] == ("sudo", "systemctl", "stop", "registry-tunnel")
@@ -141,9 +141,9 @@ def test_release_raises_on_provider_failure():
         **TUNNEL_OPTIONS,
     )
 
-    resource.acquire(TaskInputs.empty())
+    resource.acquire.run(TaskInputs.empty())
     with pytest.raises(RuntimeError, match="registry tunnel release failed"):
-        resource.release(TaskInputs.empty(), None)
+        resource.release.run(replace(TaskInputs.empty(), _upstream=None))
 
 
 def test_failed_acquire_propagates_programming_errors_from_cleanup():
@@ -163,7 +163,7 @@ def test_failed_acquire_propagates_programming_errors_from_cleanup():
     )
 
     with pytest.raises(ValueError, match="bad provider contract"):
-        resource.acquire(TaskInputs.empty())
+        resource.acquire.run(TaskInputs.empty())
 
 
 def test_failed_acquire_ignores_operational_cleanup_errors():
@@ -183,7 +183,7 @@ def test_failed_acquire_ignores_operational_cleanup_errors():
     )
 
     with pytest.raises(RuntimeError, match="registry tunnel acquire failed"):
-        resource.acquire(TaskInputs.empty())
+        resource.acquire.run(TaskInputs.empty())
 
 
 def test_release_ignores_operational_reset_error():
@@ -202,7 +202,7 @@ def test_release_ignores_operational_reset_error():
         **TUNNEL_OPTIONS,
     )
 
-    resource.release(TaskInputs.empty(), None)
+    resource.release.run(replace(TaskInputs.empty(), _upstream=None))
 
 
 def test_release_propagates_programming_error_from_reset():
@@ -222,4 +222,4 @@ def test_release_propagates_programming_error_from_reset():
     )
 
     with pytest.raises(ValueError, match="bad reset contract"):
-        resource.release(TaskInputs.empty(), None)
+        resource.release.run(replace(TaskInputs.empty(), _upstream=None))

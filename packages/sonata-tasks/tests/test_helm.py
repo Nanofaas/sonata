@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import pytest
+from resource_stubs import acquired, stub_resource
 
-from sonata_engine import Resource, TaskInputs
+from sonata_engine import TaskInputs
 from sonata_tasks.helm import (
     HelmInstallTask,
     HelmReleaseSpec,
@@ -47,9 +48,9 @@ def test_acquire_installs_and_waits_with_values_as_separate_arguments(
     executor = RecordingExecutor()
     resource = helm_release_resource(spec, executor=executor, role="stack")
 
-    acquired = resource.acquire(TaskInputs.empty())
+    value = acquired(resource)
 
-    assert acquired is spec
+    assert value is spec
     assert executor.seen[0].argv == (
         "helm",
         "upgrade",
@@ -74,7 +75,7 @@ def test_release_uninstalls_the_acquired_release(spec: HelmReleaseSpec) -> None:
     executor = RecordingExecutor()
     resource = helm_release_resource(spec, executor=executor)
 
-    resource.release(TaskInputs.empty(), spec)
+    resource.release.run(replace(TaskInputs.empty(), _upstream=spec))
 
     assert executor.seen[0].argv == (
         "helm",
@@ -88,9 +89,7 @@ def test_release_uninstalls_the_acquired_release(spec: HelmReleaseSpec) -> None:
 
 
 def test_resource_requires_its_vm_and_is_retained(spec: HelmReleaseSpec) -> None:
-    vm = Resource(
-        title="Acquire VM", acquire=lambda _inputs: None, release=lambda *_: None
-    )
+    vm = stub_resource("Acquire VM")
 
     resource = helm_release_resource(spec, executor=RecordingExecutor(), requires=(vm,))
 
@@ -109,7 +108,7 @@ def test_failed_acquire_best_effort_uninstalls_before_reraising(
     resource = helm_release_resource(spec, executor=executor)
 
     with pytest.raises(RuntimeError, match="install failed"):
-        resource.acquire(TaskInputs.empty())
+        resource.acquire.run(TaskInputs.empty())
 
     assert executor.seen[1].argv[:3] == ("helm", "uninstall", "example-service")
 
@@ -127,7 +126,7 @@ def test_failed_cleanup_is_noted_without_masking_acquire_failure(
     resource = helm_release_resource(spec, executor=executor)
 
     with pytest.raises(RuntimeError, match="install failed") as caught:
-        resource.acquire(TaskInputs.empty())
+        resource.acquire.run(TaskInputs.empty())
 
     assert "uninstall failed" in "\n".join(caught.value.__notes__)
 
@@ -172,8 +171,8 @@ def test_the_resource_runs_the_very_same_commands_as_the_tasks(
     from_tasks = RecordingExecutor()
 
     resource = helm_release_resource(spec, executor=from_resource)
-    resource.acquire(TaskInputs.empty())
-    resource.release(TaskInputs.empty(), spec)
+    resource.acquire.run(TaskInputs.empty())
+    resource.release.run(replace(TaskInputs.empty(), _upstream=spec))
 
     _ = HelmInstallTask(spec, executor=from_tasks).run(TaskInputs.empty())
     _ = HelmUninstallTask(spec, executor=from_tasks).run(TaskInputs.empty())

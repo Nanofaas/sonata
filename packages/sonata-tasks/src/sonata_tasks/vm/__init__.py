@@ -2,13 +2,49 @@
 
 from __future__ import annotations
 
-from sonata_engine import Resource, TaskInputs
+from typing import override
+
+from sonata_engine import Resource, Task, TaskInputs, TaskOutcome
 from sonata_tasks.compensation import compensated_resource
 from sonata_tasks.vm.models import VmConfig, VmInfo
 from sonata_tasks.vm.ports import VmLifecycleProtocol
 from sonata_tasks.vm.tasks import DestroyVm, EnsureVmRunning
 
 __all__ = ["vm_resource"]
+
+
+class _AcquireVm(Task[VmInfo]):
+    def __init__(self, title: str, ensure: EnsureVmRunning) -> None:
+        self.title = title
+        self._ensure = ensure
+
+    @override
+    def run(self, inputs: TaskInputs) -> TaskOutcome[VmInfo]:
+        return TaskOutcome(value=self._ensure.run())
+
+
+class _DestroyVm(Task[None]):
+    """Destroy ``fixed`` if given, else the VM acquire handed back."""
+
+    def __init__(
+        self,
+        lifecycle: VmLifecycleProtocol,
+        external: bool,
+        fixed: VmInfo | None = None,
+    ) -> None:
+        self.title = "Destroy VM" if fixed is None else f"Destroy {fixed.name}"
+        self._lifecycle = lifecycle
+        self._external = external
+        self._fixed = fixed
+
+    @override
+    def run(self, inputs: TaskInputs) -> TaskOutcome[None]:
+        if not self._external:
+            info = self._fixed if self._fixed is not None else inputs.upstream()
+            DestroyVm(
+                f"{info.name}-destroy", f"Destroy {info.name}", self._lifecycle, info
+            ).run()
+        return TaskOutcome(value=None)
 
 
 def vm_resource(
@@ -29,25 +65,10 @@ def vm_resource(
     anything.
     """
     ensure = EnsureVmRunning(f"{config.name}-ensure", title, lifecycle, config)
-
-    def destroy(info: VmInfo) -> None:
-        DestroyVm(f"{info.name}-destroy", f"Destroy {info.name}", lifecycle, info).run()
-
-    def acquire(_inputs: TaskInputs) -> VmInfo:
-        return ensure.run()
-
-    def compensate(_inputs: TaskInputs) -> None:
-        if not external:
-            destroy(fallback_info)
-
-    def release(_inputs: TaskInputs, info: VmInfo) -> None:
-        if not external:
-            destroy(info)
-
     return compensated_resource(
         title=title,
-        acquire=acquire,
-        compensate=compensate,
-        release=release,
+        acquire=_AcquireVm(title, ensure),
+        compensate=_DestroyVm(lifecycle, external, fallback_info),
+        release=_DestroyVm(lifecycle, external),
         revive=lambda raw: VmInfo(**raw),
     )

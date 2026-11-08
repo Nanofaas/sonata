@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import pytest
+from resource_stubs import acquired, stub_resource
 
-from sonata_engine import Resource, TaskInputs
+from sonata_engine import TaskInputs
 from sonata_tasks.execution.models import CommandTaskSpec, TaskResult
 from sonata_tasks.kubectl import (
     PinnedKubeconfigExecutor,
@@ -49,9 +50,7 @@ def test_pinned_kubeconfig_only_changes_kubernetes_commands(tmp_path: Path) -> N
 
 def test_owned_namespace_uses_selected_context_and_deletes_only_its_own() -> None:
     executor = RecordingExecutor(outputs=['{"items":[]}', "", ""])
-    cluster = Resource(
-        title="cluster", acquire=lambda _inputs: "selected", release=lambda *_: None
-    )
+    cluster = stub_resource("cluster", "selected")
     resource = owned_namespace_resource(
         "one-run",
         executor=executor,
@@ -61,8 +60,8 @@ def test_owned_namespace_uses_selected_context_and_deletes_only_its_own() -> Non
     )
     inputs = TaskInputs._for_resources({cluster: "selected"}, {cluster})
 
-    assert resource.acquire(inputs) == "one-run"
-    resource.release(inputs, "one-run")
+    assert resource.acquire.run(inputs).value == "one-run"
+    resource.release.run(replace(inputs, _upstream="one-run"))
 
     assert resource.requires == (cluster,)
     assert [task.argv for task in executor.seen] == [
@@ -87,7 +86,7 @@ def test_owned_namespace_refuses_collision_without_deleting() -> None:
     resource = owned_namespace_resource("one-run", executor=executor)
 
     with pytest.raises(RuntimeError, match="existing namespace"):
-        resource.acquire(TaskInputs.empty())
+        resource.acquire.run(TaskInputs.empty())
 
     assert len(executor.seen) == 1
 
@@ -133,8 +132,8 @@ def test_port_forward_returns_loopback_url_and_stops_child(
         log_path=tmp_path / "run" / "forward.log",
     )
 
-    url = resource.acquire(TaskInputs.empty())
-    resource.release(TaskInputs.empty(), url)
+    url = acquired(resource)
+    resource.release.run(replace(TaskInputs.empty(), _upstream=url))
 
     assert url == "http://127.0.0.1:40321"
     assert seen[0] == (

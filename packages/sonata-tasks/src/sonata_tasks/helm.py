@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, override
 
-from sonata_engine import Resource, TaskInputs
+from sonata_engine import Resource, Task, TaskInputs, TaskOutcome
 from sonata_tasks.command import CommandTask
 from sonata_tasks.compensation import compensated_resource
 from sonata_tasks.execution.models import CommandOptions
@@ -94,6 +94,20 @@ class HelmUninstallTask(CommandTask):
         )
 
 
+class _AcquireHelmRelease(Task[HelmReleaseSpec]):
+    def __init__(
+        self, title: str, spec: HelmReleaseSpec, install: HelmInstallTask
+    ) -> None:
+        self.title = title
+        self._spec = spec
+        self._install = install
+
+    @override
+    def run(self, inputs: TaskInputs) -> TaskOutcome[HelmReleaseSpec]:
+        _ = self._install.run(inputs)
+        return TaskOutcome(value=self._spec)
+
+
 def helm_release_resource(
     spec: HelmReleaseSpec,
     *,
@@ -110,13 +124,10 @@ def helm_release_resource(
     install = HelmInstallTask(spec, executor=executor, role=role, options=options)
     uninstall = HelmUninstallTask(spec, executor=executor, role=role, options=options)
 
-    def acquire(inputs: TaskInputs) -> HelmReleaseSpec:
-        _ = install.run(inputs)
-        return spec
-
+    title = f"Acquire Helm release {spec.release}"
     return compensated_resource(
-        title=f"Acquire Helm release {spec.release}",
-        acquire=acquire,
-        compensate=uninstall.run,
+        title=title,
+        acquire=_AcquireHelmRelease(title, spec, install),
+        compensate=uninstall,
         requires=requires,
     )

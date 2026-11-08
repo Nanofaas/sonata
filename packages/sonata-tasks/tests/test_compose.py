@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import override
 
 import pytest
+from resource_stubs import stub_resource
 
 from sonata_engine import Resource, Task, TaskInputs, TaskOutcome, Workflow
 from sonata_tasks.command import CommandTask
@@ -215,10 +216,10 @@ def test_opt_in_pre_clean_preserves_subclass_value_dependencies_and_options() ->
         "isolated", Path("compose.yaml"), "http://ready", build=False
     )
     events: list[str] = []
-    dependency = Resource(
-        title="Prepare",
-        acquire=lambda _inputs: events.append("prepare"),
-        release=lambda _inputs, _value: events.append("release"),
+    dependency = stub_resource(
+        "Prepare",
+        on_acquire=lambda: events.append("prepare"),
+        on_release=lambda: events.append("release"),
     )
     resource: Resource[TaggedProject] = docker_compose_resource(
         project,

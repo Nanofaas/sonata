@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, override
 
-from sonata_engine import Resource, Steps, TaskInputs
+from sonata_engine import Resource, Steps, Task, TaskInputs, TaskOutcome
 from sonata_tasks.command import CommandTask
 from sonata_tasks.compensation import compensated_resource
 from sonata_tasks.execution.models import CommandOptions
@@ -137,6 +137,18 @@ class DestroyDockerCompose(CommandTask):
         )
 
 
+class _AcquireComposeProject[T: DockerComposeProject](Task[T]):
+    def __init__(self, deploy: Steps, project: T) -> None:
+        self.title = deploy.title
+        self._deploy = deploy
+        self._project = project
+
+    @override
+    def run(self, inputs: TaskInputs) -> TaskOutcome[T]:
+        _ = self._deploy.run(inputs)
+        return TaskOutcome(value=self._project)
+
+
 def docker_compose_resource[T: DockerComposeProject](
     project: T,
     *,
@@ -189,13 +201,9 @@ def docker_compose_resource[T: DockerComposeProject](
         remove_orphans=remove_orphans,
     )
 
-    def acquire(inputs: TaskInputs) -> T:
-        _ = deploy.run(inputs)
-        return project
-
     return compensated_resource(
-        title=f"Acquire Docker Compose project {project.name}",
-        acquire=acquire,
-        compensate=destroy.run,
+        title=deploy.title,
+        acquire=_AcquireComposeProject(deploy, project),
+        compensate=destroy,
         requires=requires,
     )

@@ -1,7 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
+import pytest
+
+from sonata_engine import TaskInputs
+from sonata_tasks.vm import vm_resource
 from sonata_tasks.vm.models import VmConfig, VmInfo
 from sonata_tasks.vm.tasks import DestroyVm, EnsureVmRunning
 
@@ -46,3 +50,58 @@ def test_destroy_vm_calls_lifecycle_destroy() -> None:
     )
     task.run()
     assert info in lifecycle.destroyed
+
+
+def _info(name: str) -> VmInfo:
+    return VmInfo(name=name, host="10.0.0.1", user="ubuntu", home="/home/ubuntu")
+
+
+def test_vm_resource_releases_the_acquired_vm() -> None:
+    lifecycle = _make_lifecycle("made")
+    resource = vm_resource(
+        title="Acquire VM",
+        lifecycle=lifecycle,
+        config=VmConfig(name="made"),
+        fallback_info=_info("fallback"),
+    )
+
+    acquired = resource.acquire.run(TaskInputs.empty()).value
+    resource.release.run(replace(TaskInputs.empty(), _upstream=acquired))
+
+    assert lifecycle.destroyed == [lifecycle.vm_info]
+
+
+def test_vm_resource_destroys_the_fallback_when_acquire_fails() -> None:
+    lifecycle = _make_lifecycle()
+
+    def fail(_config: VmConfig) -> VmInfo:
+        raise RuntimeError("no capacity")
+
+    lifecycle.ensure_running = fail  # type: ignore[method-assign]
+    resource = vm_resource(
+        title="Acquire VM",
+        lifecycle=lifecycle,
+        config=VmConfig(name="made"),
+        fallback_info=_info("fallback"),
+    )
+
+    with pytest.raises(RuntimeError, match="no capacity"):
+        resource.acquire.run(TaskInputs.empty())
+
+    assert lifecycle.destroyed == [_info("fallback")]
+
+
+def test_an_external_vm_is_never_destroyed() -> None:
+    lifecycle = _make_lifecycle()
+    resource = vm_resource(
+        title="Acquire VM",
+        lifecycle=lifecycle,
+        config=VmConfig(name="made"),
+        fallback_info=_info("fallback"),
+        external=True,
+    )
+
+    acquired = resource.acquire.run(TaskInputs.empty()).value
+    resource.release.run(replace(TaskInputs.empty(), _upstream=acquired))
+
+    assert lifecycle.destroyed == []

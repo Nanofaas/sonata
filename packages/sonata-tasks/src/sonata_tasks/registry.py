@@ -5,10 +5,10 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from dataclasses import replace
-from typing import Any, Literal
+from typing import Any, Literal, override
 from urllib.request import urlopen
 
-from sonata_engine import Resource, TaskInputs
+from sonata_engine import Resource, Task, TaskInputs, TaskOutcome
 from sonata_tasks.compensation import best_effort
 from sonata_tasks.docker import DockerTask
 from sonata_tasks.execution.models import CommandOptions, TaskResult
@@ -80,6 +80,29 @@ def _start_registry(
             f"{port}:5000",
             image,
         )
+
+
+class _Acquire(Task[RegistryState]):
+    def __init__(self, title: str, body: Callable[[TaskInputs], RegistryState]) -> None:
+        self.title = title
+        self._body = body
+
+    @override
+    def run(self, inputs: TaskInputs) -> TaskOutcome[RegistryState]:
+        return TaskOutcome(value=self._body(inputs))
+
+
+class _Release(Task[None]):
+    def __init__(
+        self, title: str, body: Callable[[TaskInputs, RegistryState], object]
+    ) -> None:
+        self.title = title
+        self._body = body
+
+    @override
+    def run(self, inputs: TaskInputs) -> TaskOutcome[None]:
+        _ = self._body(inputs, inputs.upstream())
+        return TaskOutcome(value=None)
 
 
 def docker_registry_resource(
@@ -187,7 +210,7 @@ def docker_registry_resource(
 
     return Resource(
         title="Acquire local registry",
-        acquire=acquire,
-        release=release,
+        acquire=_Acquire("Acquire local registry", acquire),
+        release=_Release("Release local registry", release),
         requires=requires,
     )

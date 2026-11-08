@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import pytest
+from resource_stubs import acquired
 
 from sonata_engine import TaskInputs
 from sonata_tasks.execution.models import CommandTaskSpec, TaskResult
@@ -82,14 +83,14 @@ def test_minikube_target_checks_context_and_captures_only_selected_credentials(
         driver="docker",
     )
 
-    target = resource.acquire(TaskInputs.empty())
+    target = acquired(resource)
 
     assert (target.profile, target.context, target.nodes) == ("demo", "demo", ("demo",))
     assert [row["name"] for row in json.loads(kubeconfig.read_text())["users"]] == [
         "user"
     ]
     assert kubeconfig.stat().st_mode & 0o777 == 0o600
-    resource.release(TaskInputs.empty(), target)
+    resource.release.run(replace(TaskInputs.empty(), _upstream=target))
     assert not kubeconfig.exists()
 
 
@@ -100,5 +101,5 @@ def test_minikube_target_rejects_unselected_context(
     executor = Executor(outputs=["demo\n", '{"valid": []}'])
     resource = minikube_target_resource(executor=executor)
     with pytest.raises(RuntimeError, match="not an active Minikube"):
-        resource.acquire(TaskInputs.empty())
+        resource.acquire.run(TaskInputs.empty())
     assert len(executor.seen) == 2

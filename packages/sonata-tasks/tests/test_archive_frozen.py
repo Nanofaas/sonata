@@ -5,11 +5,12 @@ import io
 import shutil
 import subprocess
 import tarfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
 import pytest
+from resource_stubs import acquired
 
 from sonata_engine import TaskInputs
 from sonata_tasks import archive as shared
@@ -97,12 +98,12 @@ def test_frozen_resource_reuses_original_bytes_on_two_targets(tmp_path, frozen):
             **paths,
         )
         assert resource.always_release
-        output = resource.acquire(TaskInputs.empty())
+        output = acquired(resource)
         assert (Path(output) / "bin/app").read_bytes() == b"hello\n"
         assert (Path(output) / "bin").stat().st_mode & 0o777 == 0o755
         assert (Path(output) / "bin/app").stat().st_mode & 0o777 == 0o755
         assert Path(paths["remote_archive"]).read_bytes() == original
-        resource.release(TaskInputs.empty(), output)
+        resource.release.run(replace(TaskInputs.empty(), _upstream=output))
         assert not Path(output).exists()
         assert not Path(paths["remote_archive"]).exists()
     assert local.read_bytes() == original
@@ -252,10 +253,10 @@ def test_strict_release_reports_cleanup_status(tmp_path, frozen):
         strict_cleanup=True,
         **paths,
     )
-    value = resource.acquire(TaskInputs.empty())
+    value = acquired(resource)
     provider.cleanup_fails = True
     with pytest.raises(RuntimeError, match="cleanup denied"):
-        resource.release(TaskInputs.empty(), value)
+        resource.release.run(replace(TaskInputs.empty(), _upstream=value))
 
 
 def test_frozen_default_release_retains_archive_and_suppresses_runtime_failure(
@@ -270,12 +271,12 @@ def test_frozen_default_release_retains_archive_and_suppresses_runtime_failure(
         request=object(),
         **paths,
     )
-    value = resource.acquire(TaskInputs.empty())
-    resource.release(TaskInputs.empty(), value)
+    value = acquired(resource)
+    resource.release.run(replace(TaskInputs.empty(), _upstream=value))
     assert not Path(value).exists()
     assert Path(paths["remote_archive"]).exists()
     provider.fail = "rm"
-    resource.release(TaskInputs.empty(), value)
+    resource.release.run(replace(TaskInputs.empty(), _upstream=value))
 
 
 def test_archive_modes_require_expected_evidence_or_git_source(tmp_path, frozen):

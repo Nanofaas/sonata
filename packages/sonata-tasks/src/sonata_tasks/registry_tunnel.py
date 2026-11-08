@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import contextlib
 from collections.abc import Callable
-from typing import Any
+from typing import Any, override
 
-from sonata_engine import Resource, TaskInputs
+from sonata_engine import Resource, Task, TaskInputs, TaskOutcome
 from sonata_tasks.compensation import best_effort
 from sonata_tasks.transfer import RemoteCommandProvider, RemoteOperationResult
 
@@ -40,6 +40,27 @@ def _tunnel_title(
     if callable(registry_upstream):
         return "Acquire registry tunnel"
     return f"Acquire registry tunnel to {registry_upstream}:{upstream_port}"
+
+
+class _Acquire(Task[None]):
+    def __init__(self, title: str, body: Callable[[TaskInputs], None]) -> None:
+        self.title = title
+        self._body = body
+
+    @override
+    def run(self, inputs: TaskInputs) -> TaskOutcome[None]:
+        return TaskOutcome(value=self._body(inputs))
+
+
+class _Release(Task[None]):
+    def __init__(self, title: str, body: Callable[[TaskInputs, None], object]) -> None:
+        self.title = title
+        self._body = body
+
+    @override
+    def run(self, inputs: TaskInputs) -> TaskOutcome[None]:
+        _ = self._body(inputs, inputs.upstream())
+        return TaskOutcome(value=None)
 
 
 def registry_tunnel_resource[RequestT](
@@ -117,10 +138,11 @@ def registry_tunnel_resource[RequestT](
         finally:
             quiet(reset)
 
+    tunnel_title = _tunnel_title(title, registry_upstream, upstream_port)
     return Resource(
-        title=_tunnel_title(title, registry_upstream, upstream_port),
-        acquire=acquire,
-        release=release,
+        title=tunnel_title,
+        acquire=_Acquire(tunnel_title, acquire),
+        release=_Release(f"Release {tunnel_title.removeprefix('Acquire ')}", release),
         requires=requires,
         always_release=True,
     )

@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import Any, override
 
-from sonata_engine import Resource, TaskInputs
+from sonata_engine import Resource, Task, TaskInputs, TaskOutcome
 
 
 def best_effort(
@@ -20,34 +20,46 @@ def best_effort(
         )
 
 
+class _CompensatedAcquire[T](Task[T]):
+    """Run ``acquire``; if it fails, compensate best-effort and re-raise."""
+
+    def __init__(self, title: str, acquire: Task[T], compensate: Task[Any]) -> None:
+        self.title = title
+        self.idempotent = acquire.idempotent
+        self._acquire = acquire
+        self._compensate = compensate
+
+    @override
+    def run(self, inputs: TaskInputs) -> TaskOutcome[T]:
+        try:
+            return self._acquire.run(inputs)
+        except BaseException as error:
+            best_effort(
+                error,
+                lambda: self._compensate.run(inputs),
+                what=f"compensation for {self.title}",
+            )
+            raise
+
+
 def compensated_resource[T](
     *,
     title: str,
-    acquire: Callable[[TaskInputs], T],
-    compensate: Callable[[TaskInputs], object],
-    release: Callable[[TaskInputs, T], object] | None = None,
+    acquire: Task[T],
+    compensate: Task[Any],
+    release: Task[None] | None = None,
     requires: tuple[Resource[Any], ...] = (),
     always_release: bool = False,
     revive: Callable[[Any], T] | None = None,
 ) -> Resource[T]:
-    """Build a resource whose failed acquire performs best-effort compensation."""
+    """Build a resource whose failed acquire performs best-effort compensation.
 
-    def undo(inputs: TaskInputs, value: T) -> None:
-        _ = compensate(inputs) if release is None else release(inputs, value)
-
-    def acquire_with_compensation(inputs: TaskInputs) -> T:
-        try:
-            return acquire(inputs)
-        except BaseException as error:
-            best_effort(
-                error, lambda: compensate(inputs), what=f"compensation for {title}"
-            )
-            raise
-
+    ``release`` defaults to ``compensate``.
+    """
     return Resource(
         title=title,
-        acquire=acquire_with_compensation,
-        release=undo,
+        acquire=_CompensatedAcquire(title, acquire, compensate),
+        release=compensate if release is None else release,
         requires=requires,
         always_release=always_release,
         revive=revive,

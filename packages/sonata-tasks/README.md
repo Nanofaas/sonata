@@ -175,6 +175,8 @@ node, bootstraps the builder and returns its name. `use=False` leaves the client
 selected builder intact. Default reuse and optional replacement remain available.
 
 ```python
+from dataclasses import replace
+
 from sonata_engine import TaskInputs
 from sonata_tasks.buildx import buildx_builder_resource
 from sonata_tasks.execution.local import LocalCommandTaskExecutor
@@ -188,18 +190,18 @@ builder = buildx_builder_resource(
     use=False,
     options=CommandOptions(env={"DOCKER_CONFIG": "/tmp/application-docker"}),
 )
-name = builder.acquire(inputs)
+name = builder.acquire.run(inputs).value
 try:
     print(f"Build application images with docker buildx build --builder {name}")
 finally:
-    builder.release(inputs, name)
+    builder.release.run(replace(inputs, _upstream=name))
 ```
 
 Exclusive cleanup verifies the original single node and `docker-container`
 driver before removing the builder. Failed creation and validation compensate
 partial state; the original exception retains cleanup failures as notes. An
 explicit `owner_node` lets a caller record the identity. After failed acquisition,
-`release(inputs, "application-build")` can retry unresolved cleanup; it does
+running the release task with `"application-build"` as its upstream value can retry unresolved cleanup; it does
 nothing after confirmed removal or absence. Foreign replacement, added nodes or
 unavailable inspection prevent removal and report an error. Callers serialize
 other mutations of the same Buildx client store during inspection and removal;

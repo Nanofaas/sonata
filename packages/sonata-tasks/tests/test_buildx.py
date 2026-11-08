@@ -1,9 +1,10 @@
 """Tests for buildx builder resource."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import override
 
 import pytest
+from resource_stubs import acquired
 
 from sonata_engine import TaskInputs
 from sonata_tasks.buildx import buildx_builder_resource
@@ -51,9 +52,9 @@ def test_buildx_builder_creates_bootstraps_and_removes() -> None:
         executor=executor,
         role="stack",
     )
-    state = resource.acquire(TaskInputs.empty())
+    state = acquired(resource)
     assert state == "release-builder"
-    resource.release(TaskInputs.empty(), state)
+    resource.release.run(replace(TaskInputs.empty(), _upstream=state))
 
     argv_seqs = [tuple(s.argv) for s in executor.seen]
     assert argv_seqs == [
@@ -91,7 +92,7 @@ def test_buildx_builder_passes_driver_options_to_the_create() -> None:
         driver_options=("network=host",),
     )
 
-    resource.acquire(TaskInputs.empty())
+    resource.acquire.run(TaskInputs.empty())
 
     create = next(tuple(s.argv) for s in executor.seen if "create" in s.argv)
     assert create == (
@@ -115,9 +116,9 @@ def test_buildx_builder_preexisting_is_not_removed() -> None:
         executor=executor,
         role="stack",
     )
-    state = resource.acquire(TaskInputs.empty())
+    state = acquired(resource)
     assert state == "existing"
-    resource.release(TaskInputs.empty(), state)
+    resource.release.run(replace(TaskInputs.empty(), _upstream=state))
     assert len(executor.seen) == 1  # only inspect, no create or rm
     assert resource.always_release is True
 
@@ -133,7 +134,7 @@ def test_buildx_builder_validates_preexisting_builder() -> None:
     )
 
     with pytest.raises(RuntimeError, match="wrong platform"):
-        resource.acquire(TaskInputs.empty())
+        resource.acquire.run(TaskInputs.empty())
 
     assert len(executor.seen) == 1
 
@@ -147,8 +148,8 @@ def test_buildx_builder_can_replace_and_cleanup_a_stale_named_builder() -> None:
         replace_existing=True,
     )
 
-    state = resource.acquire(TaskInputs.empty())
-    resource.release(TaskInputs.empty(), state)
+    state = acquired(resource)
+    resource.release.run(replace(TaskInputs.empty(), _upstream=state))
 
     commands = [task.argv for task in executor.seen]
     assert sum("create" in command for command in commands) == 1
@@ -169,7 +170,7 @@ def test_buildx_builder_uses_buildkit_config_validates_and_compensates_bootstrap
     )
 
     with pytest.raises(RuntimeError):
-        resource.acquire(TaskInputs.empty())
+        resource.acquire.run(TaskInputs.empty())
 
     commands = [task.argv for task in executor.seen]
     create = next(argv for argv in commands if "create" in argv)
@@ -185,7 +186,7 @@ def test_buildx_builder_compensates_a_failed_partial_create() -> None:
     )
 
     with pytest.raises(RuntimeError, match="partial create"):
-        resource.acquire(TaskInputs.empty())
+        resource.acquire.run(TaskInputs.empty())
 
     assert executor.seen[-1].argv == (
         "docker",
@@ -273,16 +274,16 @@ def exclusive(executor, **kwargs):
 def test_exclusive_builder_keeps_selection_and_removes_only_its_node():
     executor = ExclusiveExecutor()
     resource = exclusive(executor)
-    state = resource.acquire(TaskInputs.empty())
+    state = acquired(resource)
     assert state == "ordinary-app"
     create = next(task for task in executor.seen if "create" in task.argv)
     assert create.argv[create.argv.index("--node") + 1] == "ordinary-owner"
     assert "--use" not in create.argv
-    resource.release(TaskInputs.empty(), state)
+    resource.release.run(replace(TaskInputs.empty(), _upstream=state))
     assert executor.builders == {}
     assert executor.seen[-1].argv == ("docker", "buildx", "rm", "ordinary-app")
     count = len(executor.seen)
-    resource.release(TaskInputs.empty(), state)
+    resource.release.run(replace(TaskInputs.empty(), _upstream=state))
     assert len(executor.seen) == count
 
 
@@ -290,8 +291,8 @@ def test_exclusive_builder_refuses_preexisting_without_mutation():
     executor = ExclusiveExecutor(builders={"ordinary-app": ("operator-node",)})
     resource = exclusive(executor)
     with pytest.raises(RuntimeError, match="already exists"):
-        resource.acquire(TaskInputs.empty())
-    resource.release(TaskInputs.empty(), "ordinary-app")
+        resource.acquire.run(TaskInputs.empty())
+    resource.release.run(replace(TaskInputs.empty(), _upstream="ordinary-app"))
     assert executor.builders == {"ordinary-app": ("operator-node",)}
     assert [task.argv[2] for task in executor.seen] == ["ls"]
 
@@ -301,7 +302,7 @@ def test_exclusive_builder_compensates_only_published_owned_state(failure):
     executor = ExclusiveExecutor(failure=failure)
     resource = exclusive(executor)
     with pytest.raises(RuntimeError, match=r"failed|failure"):
-        resource.acquire(TaskInputs.empty())
+        resource.acquire.run(TaskInputs.empty())
     assert executor.builders == {}
     removes = [task for task in executor.seen if task.argv[2] == "rm"]
     assert len(removes) == (0 if failure == "empty-create" else 1)
@@ -310,14 +311,14 @@ def test_exclusive_builder_compensates_only_published_owned_state(failure):
 def test_exclusive_builder_reconciles_cancellation_after_partial_create():
     executor = ExclusiveExecutor(failure="cancel-create")
     with pytest.raises(KeyboardInterrupt, match="after creation"):
-        exclusive(executor).acquire(TaskInputs.empty())
+        exclusive(executor).acquire.run(TaskInputs.empty())
     assert executor.builders == {}
 
 
 def test_exclusive_builder_keeps_primary_failure_when_partial_owner_is_foreign():
     executor = ExclusiveExecutor(failure="foreign-create")
     with pytest.raises(RuntimeError, match="partial create failure") as caught:
-        exclusive(executor).acquire(TaskInputs.empty())
+        exclusive(executor).acquire.run(TaskInputs.empty())
     assert executor.builders == {"ordinary-app": ("foreign-node",)}
     assert any("identity" in note for note in caught.value.__notes__)
     assert all(task.argv[2] != "rm" for task in executor.seen)
@@ -329,10 +330,10 @@ def test_exclusive_builder_keeps_primary_failure_when_partial_owner_is_foreign()
 def test_exclusive_builder_release_rejects_foreign_or_additional_nodes(nodes):
     executor = ExclusiveExecutor()
     resource = exclusive(executor)
-    state = resource.acquire(TaskInputs.empty())
+    state = acquired(resource)
     executor.builders[state] = nodes
     with pytest.raises(RuntimeError, match="identity"):
-        resource.release(TaskInputs.empty(), state)
+        resource.release.run(replace(TaskInputs.empty(), _upstream=state))
     assert executor.builders[state] == nodes
     assert all(task.argv[2] != "rm" for task in executor.seen)
 
@@ -340,19 +341,19 @@ def test_exclusive_builder_release_rejects_foreign_or_additional_nodes(nodes):
 def test_exclusive_builder_release_requires_the_original_driver():
     executor = ExclusiveExecutor()
     resource = exclusive(executor)
-    state = resource.acquire(TaskInputs.empty())
+    state = acquired(resource)
     executor.driver = "remote"
     with pytest.raises(RuntimeError, match="identity"):
-        resource.release(TaskInputs.empty(), state)
+        resource.release.run(replace(TaskInputs.empty(), _upstream=state))
     assert state in executor.builders
 
 
 def test_exclusive_builder_release_accepts_confirmed_absence():
     executor = ExclusiveExecutor()
     resource = exclusive(executor)
-    state = resource.acquire(TaskInputs.empty())
+    state = acquired(resource)
     del executor.builders[state]
-    resource.release(TaskInputs.empty(), state)
+    resource.release.run(replace(TaskInputs.empty(), _upstream=state))
     assert all(task.argv[2] != "rm" for task in executor.seen)
 
 
@@ -360,13 +361,13 @@ def test_exclusive_builder_release_accepts_confirmed_absence():
 def test_exclusive_builder_cleanup_failure_is_reported_and_retryable(failure):
     executor = ExclusiveExecutor()
     resource = exclusive(executor)
-    state = resource.acquire(TaskInputs.empty())
+    state = acquired(resource)
     setattr(executor, failure, True)
     with pytest.raises(RuntimeError, match="failed"):
-        resource.release(TaskInputs.empty(), state)
+        resource.release.run(replace(TaskInputs.empty(), _upstream=state))
     assert state in executor.builders
     setattr(executor, failure, False)
-    resource.release(TaskInputs.empty(), state)
+    resource.release.run(replace(TaskInputs.empty(), _upstream=state))
     assert executor.builders == {}
 
 
@@ -377,9 +378,9 @@ def test_exclusive_builder_generates_distinct_owner_nodes():
         resource = buildx_builder_resource(
             name="ordinary-app", executor=executor, exclusive=True
         )
-        state = resource.acquire(TaskInputs.empty())
+        state = acquired(resource)
         nodes.extend(executor.builders[state])
-        resource.release(TaskInputs.empty(), state)
+        resource.release.run(replace(TaskInputs.empty(), _upstream=state))
     assert len(set(nodes)) == 2
     assert all(node.startswith("ordinary-app-") for node in nodes)
 
@@ -392,8 +393,8 @@ def test_exclusive_builder_preserves_role_and_command_options():
         env={"DOCKER_CONFIG": "/isolated/client"}, timeout_seconds=5
     )
     resource = exclusive(executor, role="remote", options=options)
-    state = resource.acquire(TaskInputs.empty())
-    resource.release(TaskInputs.empty(), state)
+    state = acquired(resource)
+    resource.release.run(replace(TaskInputs.empty(), _upstream=state))
     assert all(
         task.role == "remote" and task.options == options for task in executor.seen
     )
@@ -426,10 +427,10 @@ def test_exclusive_builder_normalizes_names_as_the_native_client_does():
         exclusive=True,
         owner_node="Ordinary-Owner",
     )
-    state = resource.acquire(TaskInputs.empty())
+    state = acquired(resource)
     assert state == "ordinary-app"
     assert executor.builders[state] == ("ordinary-owner",)
-    resource.release(TaskInputs.empty(), state)
+    resource.release.run(replace(TaskInputs.empty(), _upstream=state))
 
 
 @pytest.mark.parametrize("cleanup_fails", [False, True])
@@ -443,14 +444,14 @@ def test_exclusive_validation_failure_preserves_primary_and_compensates(cleanup_
 
     resource = exclusive(executor, validate=validate, validation_key="app-platform-v1")
     with pytest.raises(ValueError, match="application platform rejected") as caught:
-        resource.acquire(TaskInputs.empty())
+        resource.acquire.run(TaskInputs.empty())
     assert len(observed) == 1
     assert "Platforms:" in observed[0]
     assert bool(executor.builders) is cleanup_fails
     if cleanup_fails:
         assert any("remove failed" in note for note in caught.value.__notes__)
         executor.remove_unavailable = False
-        resource.release(TaskInputs.empty(), "ordinary-app")
+        resource.release.run(replace(TaskInputs.empty(), _upstream="ordinary-app"))
         assert executor.builders == {}
 
 
@@ -468,7 +469,7 @@ def test_exclusive_bootstrap_rejects_foreign_identity_before_validation():
         executor, validate=observed.append, validation_key="receipt-v1"
     )
     with pytest.raises(RuntimeError, match="bootstrap identity"):
-        resource.acquire(TaskInputs.empty())
+        resource.acquire.run(TaskInputs.empty())
     assert observed == []
     assert executor.builders == {"ordinary-app": ("replacement-node",)}
     assert all(task.argv[2] != "rm" for task in executor.seen)
@@ -489,11 +490,11 @@ def test_exclusive_failed_removal_cannot_confirm_cleanup_from_missing_record():
     executor = RemovedRecordExecutor(failure="bootstrap")
     resource = exclusive(executor)
     with pytest.raises(RuntimeError, match="bootstrap failed") as caught:
-        resource.acquire(TaskInputs.empty())
+        resource.acquire.run(TaskInputs.empty())
     assert any("daemon stop failed" in note for note in caught.value.__notes__)
     assert executor.builders == {}
     with pytest.raises(RuntimeError, match="unconfirmed"):
-        resource.release(TaskInputs.empty(), "ordinary-app")
+        resource.release.run(replace(TaskInputs.empty(), _upstream="ordinary-app"))
     assert executor.daemon_alive
 
 
@@ -509,6 +510,6 @@ def test_exclusive_cleanup_exception_never_replaces_primary_failure(cleanup_erro
 
     executor = InterruptedCleanupExecutor(failure="partial-create")
     with pytest.raises(RuntimeError, match="partial create failure") as caught:
-        exclusive(executor).acquire(TaskInputs.empty())
+        exclusive(executor).acquire.run(TaskInputs.empty())
     assert executor.builders == {"ordinary-app": ("ordinary-owner",)}
     assert any("secondary cleanup failure" in note for note in caught.value.__notes__)

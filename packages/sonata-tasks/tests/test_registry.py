@@ -1,6 +1,7 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import pytest
+from resource_stubs import acquired
 
 from sonata_engine import TaskInputs
 from sonata_tasks.registry import docker_registry_resource
@@ -45,8 +46,8 @@ def test_registry_resource_creates_and_removes_only_its_container() -> None:
         ready=lambda: True,
     )
 
-    state = resource.acquire(TaskInputs.empty())
-    resource.release(TaskInputs.empty(), state)
+    state = acquired(resource)
+    resource.release.run(replace(TaskInputs.empty(), _upstream=state))
 
     assert state == "created"
     assert [task.argv[:2] for task in executor.seen] == [
@@ -74,8 +75,8 @@ def test_registry_starts_and_stops_a_preexisting_stopped_container() -> None:
         ready=lambda: True,
     )
 
-    state = resource.acquire(TaskInputs.empty())
-    resource.release(TaskInputs.empty(), state)
+    state = acquired(resource)
+    resource.release.run(replace(TaskInputs.empty(), _upstream=state))
 
     assert state == "started"
     assert [task.argv[1] for task in executor.seen] == ["inspect", "start", "stop"]
@@ -92,8 +93,8 @@ def test_registry_leaves_a_running_preexisting_container_untouched() -> None:
         ready=lambda: True,
     )
 
-    state = resource.acquire(TaskInputs.empty())
-    resource.release(TaskInputs.empty(), state)
+    state = acquired(resource)
+    resource.release.run(replace(TaskInputs.empty(), _upstream=state))
 
     assert state == "existing"
     assert [task.argv[1] for task in executor.seen] == ["inspect"]
@@ -110,7 +111,7 @@ def test_registry_times_out_and_compensates_what_it_created() -> None:
     )
 
     with pytest.raises(RuntimeError, match="never became ready"):
-        resource.acquire(TaskInputs.empty())
+        resource.acquire.run(TaskInputs.empty())
 
     assert [task.argv[1] for task in executor.seen][-1] == "rm"
 
