@@ -21,6 +21,7 @@ from sonata_engine.core.compiled import (
     TaskExecution,
     WorkflowResult,
 )
+from sonata_engine.core.compose import _AcquireMembers
 from sonata_engine.core.inputs import TaskInputs
 from sonata_engine.core.outcome import TaskOutcome
 from sonata_engine.core.resource_task import Resource, ResourceOp, ResourceOperation
@@ -28,6 +29,7 @@ from sonata_engine.core.selection import Selection
 from sonata_engine.core.slug import slugify as _slugify
 from sonata_engine.core.task import ReusableTask, Task
 from sonata_engine.errors import (
+    CompositeMemberRequiredError,
     InvalidTaskOutcomeError,
     ResourceDependencyCycleError,
     ResumeConfigurationError,
@@ -224,6 +226,34 @@ def _register_dependency(
             _register_dependency(state, dependency, index)
     state.first.setdefault(key, index)
     state.last[key] = index
+
+
+def _reject_required_members(
+    definitions: list[tuple[Task[Any], tuple[Resource, ...]]], state: _MergeState
+) -> None:
+    """Refuse a composite member that is also required outside its composite.
+
+    The composite acquires its members itself, so a direct requirement would
+    acquire one twice. Members never reach `state` through a composite (its
+    `requires` excludes them), so any requirement naming one is a direct one.
+    """
+    owner = {
+        id(member): resource
+        for resource in state.resources.values()
+        if isinstance(resource.acquire, _AcquireMembers)
+        for member in resource.acquire.members
+    }
+    requirers = [(task.title, requires) for task, requires in definitions] + [
+        (resource.title, resource.requires) for resource in state.resources.values()
+    ]
+    for title, requires in requirers:
+        for required in requires:
+            composite = owner.get(id(required))
+            if composite is not None:
+                raise CompositeMemberRequiredError(
+                    f"{title!r} requires {required.title!r}, a member of "
+                    f"composite {composite.title!r}: require the composite instead"
+                )
 
 
 @dataclass
@@ -720,6 +750,7 @@ class Workflow:
         for index, (_task, requires) in enumerate(definitions):
             for resource in requires:
                 _register_dependency(state, resource, index)
+        _reject_required_members(definitions, state)
 
         # Acquisition order: by first-consumer index, then discovery order.
         acquire_rank = {key: rank for rank, key in enumerate(state.discovery)}

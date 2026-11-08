@@ -81,3 +81,11 @@ class StepScopeUnavailableError(Exception):
     through `Workflow.run()` -- add it to a `Workflow` instead of calling
     `run()` on it yourself.
     """
+
+
+class CompositeMemberRequiredError(ValueError):
+    """Raised when a composite's member is also required outside the composite.
+
+    The composite acquires its members itself; requiring one directly as well
+    would acquire it a second time.
+    """

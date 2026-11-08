@@ -13,6 +13,7 @@ from sonata_engine.core.compiled import (
     TaskExecution,
     WorkflowResult,
 )
+from sonata_engine.core.compose import Members, compose
 from sonata_engine.core.inputs import TaskInputs
 from sonata_engine.core.outcome import Evidence, TaskOutcome
 from sonata_engine.core.resource_task import Resource
@@ -25,6 +26,7 @@ __all__ = [
     "CompiledTask",
     "CompiledWorkflow",
     "Evidence",
+    "Members",
     "Resource",
     "ReusableTask",
     "Selection",
@@ -35,4 +37,5 @@ __all__ = [
     "TaskOutcome",
     "Workflow",
     "WorkflowResult",
+    "compose",
 ]
