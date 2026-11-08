@@ -69,7 +69,8 @@ Two layers under `src/sonata_engine/`:
 - **`core/`** — execution. `Task[T]` is a generic ABC whose `run()` returns
   `TaskOutcome[T]`. `Workflow.add()` builds a sequential workflow;
   `Workflow.compile()` assigns canonical `NNN.slug` IDs and inserts acquire and
-  release units for declared `Resource`s; `Workflow.run()` executes the compiled
+  release units for declared `Resource`s (a pair of tasks; `compose` builds
+  one resource from an ordered sequence of them); `Workflow.run()` executes the compiled
   graph, releases resources on success or failure, and optionally journals for
   resume. `Steps` assembles ordinary tasks into one compiled unit with
   individually journalled child steps and in-process upstream values.

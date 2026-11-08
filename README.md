@@ -202,28 +202,32 @@ instead of under the unit, silently.
 
 ## Resources
 
-A `Resource[T]` acquires a runtime value of type `T` and receives that same typed
-value back when it is released. Consumers declare what they need; the compiler
-splices acquire and release units around them, and cleanup runs in reverse
-acquisition order after success or failure.
+A `Resource[T]` is a pair of tasks: an `acquire` task producing a value of type
+`T` and a `release` task that reads that value through `inputs.upstream()`.
+Both run through the normal runner, so they are journalled and emit the usual
+workflow events; either may be a `Steps`. Consumers declare what they need; the
+compiler splices acquire and release units around them, and cleanup runs in
+reverse acquisition order after success or failure.
 
 ```python
-from sonata_engine import Resource, TaskInputs
+from sonata_engine import Resource, Task, TaskInputs, TaskOutcome
 
 
-def start_builder(inputs: TaskInputs) -> Builder:
-    return Builder()
+class StartBuilder(Task[Builder]):
+    def run(self, inputs: TaskInputs) -> TaskOutcome[Builder]:
+        return TaskOutcome(value=Builder())
 
 
-def stop_builder(inputs: TaskInputs, builder: Builder) -> None:
-    builder.stop()
+class StopBuilder(Task[None]):
+    def run(self, inputs: TaskInputs) -> TaskOutcome[None]:
+        inputs.upstream().stop()
+        return TaskOutcome()
 
 
 builder: Resource[Builder] = Resource(
     title="Acquire builder",
-    acquire=start_builder,
-    release=stop_builder,
-    acquire_idempotent=True,
+    acquire=StartBuilder(),
+    release=StopBuilder(),
 )
 
 workflow.add(Build(), requires=(builder,))
@@ -231,12 +235,30 @@ workflow.add(Build(), requires=(builder,))
 
 Inside `Build.run`, `inputs.resource(builder)` returns the acquired value. A
 resource may itself declare `requires=(other_resource,)`; those dependencies are
-acquired first, stay available to their lifecycle callbacks, and are released
-after their dependents. Declare only the resources you use directly. A cycle
-fails compilation with `ResourceDependencyCycleError`.
+acquired first, stay available to the acquire and release tasks, and are
+released after their dependents. Declare only the resources you use directly. A
+cycle fails compilation with `ResourceDependencyCycleError`.
 
-`acquire_idempotent=False` is the safe default: a failed or interrupted acquire is
-ambiguous, and resume refuses to retry it automatically.
+A failed or interrupted acquire is ambiguous, and resume refuses to retry it
+automatically unless the acquire task declares itself `idempotent`.
+
+### Composing resources
+
+`compose` turns an ordered sequence of resources into one resource:
+
+```python
+from sonata_engine import compose
+
+platform = compose("Platform", (vm, prometheus), collect=(SnapshotMetrics(),))
+workflow.add(Check(), requires=(platform,))
+# in Check.run: inputs.resource(platform).of(prometheus)
+```
+
+Members are acquired in order and released in reverse, after the `collect`
+tasks. If acquiring a member fails, the members already acquired are released
+before the error propagates. The composite is `always_release` if any member is.
+A member may not also be required directly by a task:
+`CompositeMemberRequiredError`.
 
 ### Retention
 
@@ -312,7 +334,7 @@ malformed record raises `CorruptJournalError`.
 Runtime values — `TaskOutcome.value` and acquired resource values — are in-process
 only: they are not journaled and are not reconstructed by resume. Make resumed
 work depend on durable, verifier-backed evidence rather than on a value from a
-previous run. Resource acquire callbacks run again on resume, yielding fresh
+previous run. Resource acquire tasks run again on resume, yielding fresh
 in-process values for the resumed run.
 
 ## Upgrading
@@ -341,6 +363,11 @@ code must be migrated before upgrading:
 Old-shape code raises `TypeError` at call time (`run() takes 1 positional argument
 but 2 were given`) rather than silently misbehaving, so the break is loud. It is
 what makes `TaskInputs`/`Resource` dependencies possible at all.
+
+**`0.7.0` removes callable resources.** `Resource(acquire=callable,
+release=callable)` and `acquire_idempotent` are gone; a resource is now a pair of
+tasks (see Resources). Drain kept resources and interrupted runs with 0.6.x
+before upgrading: 0.7.0 does not read journals written by the callable version.
 
 ## Related
 
