@@ -175,14 +175,11 @@ node, bootstraps the builder and returns its name. `use=False` leaves the client
 selected builder intact. Default reuse and optional replacement remain available.
 
 ```python
-from dataclasses import replace
-
-from sonata_engine import TaskInputs
+from sonata_engine import Task, TaskInputs, TaskOutcome, Workflow
 from sonata_tasks.buildx import buildx_builder_resource
 from sonata_tasks.execution.local import LocalCommandTaskExecutor
 from sonata_tasks.execution.models import CommandOptions
 
-inputs = TaskInputs.empty()
 builder = buildx_builder_resource(
     name="application-build",
     executor=LocalCommandTaskExecutor(),
@@ -190,12 +187,26 @@ builder = buildx_builder_resource(
     use=False,
     options=CommandOptions(env={"DOCKER_CONFIG": "/tmp/application-docker"}),
 )
-name = builder.acquire.run(inputs).value
-try:
-    print(f"Build application images with docker buildx build --builder {name}")
-finally:
-    builder.release.run(replace(inputs, _upstream=name))
+
+
+class BuildImages(Task[None]):
+    title = "Build images"
+
+    def run(self, inputs: TaskInputs) -> TaskOutcome[None]:
+        name = inputs.resource(builder)
+        print(f"Build application images with docker buildx build --builder {name}")
+        return TaskOutcome()
+
+
+workflow = Workflow(workflow_id="application-build")
+workflow.add(BuildImages(), requires=(builder,))
+workflow.run()  # acquires the builder, builds, then releases it
 ```
+
+Run a resource through a `Workflow`, as above: the runner acquires it, hands
+its value to the consumers and releases it afterwards, even on failure. A
+resource kept with `keep=True` is released later with
+`sonata_engine.release_retained`.
 
 Exclusive cleanup verifies the original single node and `docker-container`
 driver before removing the builder. Failed creation and validation compensate

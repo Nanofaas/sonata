@@ -214,11 +214,16 @@ from sonata_engine import Resource, Task, TaskInputs, TaskOutcome
 
 
 class StartBuilder(Task[Builder]):
+    title = "Start builder"
+    idempotent = True  # starting it twice is harmless, so resume may retry
+
     def run(self, inputs: TaskInputs) -> TaskOutcome[Builder]:
         return TaskOutcome(value=Builder())
 
 
 class StopBuilder(Task[None]):
+    title = "Stop builder"
+
     def run(self, inputs: TaskInputs) -> TaskOutcome[None]:
         inputs.upstream().stop()
         return TaskOutcome()
@@ -242,6 +247,9 @@ cycle fails compilation with `ResourceDependencyCycleError`.
 A failed or interrupted acquire is ambiguous, and resume refuses to retry it
 automatically unless the acquire task declares itself `idempotent`.
 
+The acquire and release tasks' titles are used: a `Steps` acquire or release
+names its steps from them, and a composite member's are its step names.
+
 ### Composing resources
 
 `compose` turns an ordered sequence of resources into one resource:
@@ -257,8 +265,9 @@ workflow.add(Check(), requires=(platform,))
 Members are acquired in order and released in reverse, after the `collect`
 tasks. If acquiring a member fails, the members already acquired are released
 before the error propagates. The composite is `always_release` if any member is.
-A member may not also be required directly by a task:
-`CompositeMemberRequiredError`.
+A member may require only earlier members (`compose` raises `ValueError`
+otherwise). A member may not also be required directly by a task, nor belong to
+two composites: `CompositeMemberRequiredError`.
 
 ### Retention
 
@@ -366,8 +375,10 @@ what makes `TaskInputs`/`Resource` dependencies possible at all.
 
 **`0.7.0` removes callable resources.** `Resource(acquire=callable,
 release=callable)` and `acquire_idempotent` are gone; a resource is now a pair of
-tasks (see Resources). Drain kept resources and interrupted runs with 0.6.x
-before upgrading: 0.7.0 does not read journals written by the callable version.
+tasks (see Resources). Every workflow fingerprint changes, so 0.7.0 cannot
+*resume* a run journalled by 0.6.x: finish or discard interrupted runs with
+0.6.x first. Resources kept by a 0.6.x run must be released with 0.6.x (its
+`release_retained`) before upgrading.
 
 ## Related
 

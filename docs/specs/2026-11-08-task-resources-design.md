@@ -12,7 +12,8 @@ Design record for Sonata 0.7.0.
    release=callable)` goes away; there is one way to declare a resource.
    Released as a single breaking Sonata version (engine and tasks under one
    tag); `sonata-tasks`' 9 callable resources are converted in the same tag.
-3. **Composite resource.** A resource can be declared as an ordered sequence
+3. **Composite resource.** (Superseded in part: see "Settled while planning"
+   and "As built".) A resource can be declared as an ordered sequence
    of elements, each either a plain `Task` (runs once during acquire: render a
    config, verify ingestion) or a task resource (started during acquire,
    stopped during release). Semantics:
@@ -47,6 +48,8 @@ Design record for Sonata 0.7.0.
 
 ## Kept, to be carried onto task resources
 
+(Superseded by "As built" where they differ.)
+
 `requires`, `keep` / `always_release`, `revive` (a release in a later process
 still rebuilds the value from the journal's JSON), `acquire_idempotent`
 (becomes the acquire task's own `idempotent`), identity semantics (`eq=False`,
@@ -75,8 +78,10 @@ old version; the plan includes that one-off drain step.
   `Members.of(resource)` is the typed accessor. Members are acquired in order
   and released in reverse, after the collect tasks. A failing composite acquire
   unwinds the members already acquired. The composite is `always_release` if
-  any member is. A member also required directly raises
-  `CompositeMemberRequiredError`.
+  any member is. A member also required directly, or shared by two
+  composites, raises `CompositeMemberRequiredError`; a member requiring a
+  later member is a `ValueError` from `compose`. Member releases (the unwind
+  and the composite's release) never resume and survive journal failures.
 - `sonata-tasks` resources are converted; `compensated_resource(*, title,
   acquire, compensate, release=None, requires=(), always_release=False,
   revive=None)` builds one whose failed acquire is compensated. The shared
