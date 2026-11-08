@@ -1,13 +1,28 @@
 """Positive static-check fixture for typed resource inputs."""
 
-from typing import assert_type
+from typing import assert_type, override
 
-from sonata_engine import Resource, TaskInputs
+from sonata_engine import Resource, Task, TaskInputs, TaskOutcome
+
+
+class AcquireName(Task[str]):
+    title = "Acquire name"
+
+    @override
+    def run(self, inputs: TaskInputs) -> TaskOutcome[str]:
+        return TaskOutcome(value="builder")
+
+
+class ReleaseName(Task[None]):
+    title = "Release name"
+
+    @override
+    def run(self, inputs: TaskInputs) -> TaskOutcome[None]:
+        return TaskOutcome()
+
 
 resource: Resource[str] = Resource(
-    title="Acquire name",
-    acquire=lambda _inputs: "builder",
-    release=lambda _inputs, _value: None,
+    title="Acquire name", acquire=AcquireName(), release=ReleaseName()
 )
 
 

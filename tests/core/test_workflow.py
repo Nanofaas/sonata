@@ -4,11 +4,11 @@ from collections.abc import Generator
 from contextlib import contextmanager
 
 import pytest
+from support import task_resource
 
 from sonata_engine import subtask
 from sonata_engine.core.inputs import TaskInputs
 from sonata_engine.core.outcome import TaskOutcome
-from sonata_engine.core.resource_task import Resource
 from sonata_engine.core.selection import Selection
 from sonata_engine.core.task import ReusableTask, Task
 from sonata_engine.core.workflow import Workflow
@@ -205,10 +205,10 @@ def test_run_notifies_observer_after_success() -> None:
 
 def test_run_notifies_observer_after_failure_cleanup() -> None:
     events: list[str] = []
-    resource = Resource(
+    resource = task_resource(
         title="Acquire test resource",
-        acquire=lambda _inputs: None,
-        release=lambda _inputs, _state: events.append("cleanup"),
+        acquire_fn=lambda _inputs: None,
+        release_fn=lambda _inputs, _state: events.append("cleanup"),
     )
     workflow = Workflow(workflow_id="wf")
     workflow.add(_BoomTask(), requires=(resource,))

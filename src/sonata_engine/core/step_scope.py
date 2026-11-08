@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
     from sonata_engine.core.compiled import TaskExecution
+    from sonata_engine.core.inputs import TaskInputs
     from sonata_engine.core.task import Task
 
 
@@ -25,4 +26,8 @@ class _StepScopeProtocol(Protocol):
 
     def run_step(self, step: Task[Any], slug: str, upstream: Any) -> TaskExecution:  # noqa: ANN401
         """Run one step beneath this scope and return how it went."""
+        ...
+
+    def rebased(self, inputs: TaskInputs) -> _StepScopeProtocol:
+        """Return this scope, same prefix, journal and resume, over new inputs."""
         ...

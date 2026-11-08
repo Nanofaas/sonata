@@ -16,10 +16,13 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from dataclasses import replace
 from typing import Any
 
 from sonata_engine.core.inputs import TaskInputs
 from sonata_engine.core.resource_task import Resource
+from sonata_engine.core.slug import slugify
+from sonata_engine.core.workflow import _StepScope
 from sonata_engine.journal import SCHEMA_VERSION, JournalConfig
 
 
@@ -96,7 +99,20 @@ def release_retained(
         try:
             if resource.revive is not None:
                 value = resource.revive(value)
-            resource.release(inputs, value)
+            resource.release.run(
+                replace(
+                    inputs,
+                    _upstream=value,
+                    # No journal: the steps of a release run from a later
+                    # process are not resumable, only the retention record is.
+                    _step_scope=_StepScope(
+                        prefix=f"retained/{slugify(title)}",
+                        base_inputs=inputs,
+                        jrnl=None,
+                        resume=False,
+                    ),
+                )
+            )
         except BaseException as error:  # NOSONAR S5754 - keep releasing; noqa: BLE001
             errors.append(error)
             continue

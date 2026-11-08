@@ -7,10 +7,10 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
+from support import task_resource
 
 from sonata_engine.core.inputs import TaskInputs
 from sonata_engine.core.outcome import Evidence, TaskOutcome
-from sonata_engine.core.resource_task import Resource
 from sonata_engine.core.task import ReusableTask, Task
 from sonata_engine.core.workflow import Workflow
 from sonata_engine.errors import (
@@ -342,11 +342,11 @@ def test_non_idempotent_acquire_never_retries_ambiguous_state(
 ) -> None:
     config = JournalConfig(path=tmp_path / "journal.jsonl")
     calls: list[str] = []
-    resource = Resource(
+    resource = task_resource(
         title="Acquire vm",
-        acquire=lambda _inputs: calls.append("acquire"),
-        release=lambda _inputs, _value: calls.append("release"),
-        acquire_idempotent=False,
+        acquire_fn=lambda _inputs: calls.append("acquire"),
+        release_fn=lambda _inputs, _value: calls.append("release"),
+        idempotent=False,
     )
     workflow = Workflow(workflow_id="wf")
     workflow.add(_Tracker("Use vm"), requires=(resource,))
@@ -369,11 +369,11 @@ def test_idempotent_acquire_retries_ambiguous_state(
 ) -> None:
     config = JournalConfig(path=tmp_path / "journal.jsonl")
     calls: list[str] = []
-    resource = Resource(
+    resource = task_resource(
         title="Acquire vm",
-        acquire=lambda _inputs: calls.append("acquire"),
-        release=lambda _inputs, _value: calls.append("release"),
-        acquire_idempotent=True,
+        acquire_fn=lambda _inputs: calls.append("acquire"),
+        release_fn=lambda _inputs, _value: calls.append("release"),
+        idempotent=True,
     )
     workflow = Workflow(workflow_id="wf")
     workflow.add(_Tracker("Use vm"), requires=(resource,))
@@ -397,10 +397,10 @@ def test_acquire_passed_always_reruns(tmp_path: Path) -> None:
     """
     config = JournalConfig(path=tmp_path / "journal.jsonl")
     calls: list[str] = []
-    resource = Resource(
+    resource = task_resource(
         title="Acquire vm",
-        acquire=lambda _inputs: calls.append("acquire"),
-        release=lambda _inputs, _value: calls.append("release"),
+        acquire_fn=lambda _inputs: calls.append("acquire"),
+        release_fn=lambda _inputs, _value: calls.append("release"),
     )
     workflow = Workflow(workflow_id="wf")
     workflow.add(_Tracker("Use vm"), requires=(resource,))
@@ -424,10 +424,10 @@ def test_release_journal_failure_does_not_mask_main_error_or_abort_cleanup(
 ) -> None:
     config = JournalConfig(path=tmp_path / "journal.jsonl")
     calls: list[str] = []
-    resource = Resource(
+    resource = task_resource(
         title="Acquire vm",
-        acquire=lambda _inputs: calls.append("acquire"),
-        release=lambda _inputs, _value: calls.append("release"),
+        acquire_fn=lambda _inputs: calls.append("acquire"),
+        release_fn=lambda _inputs, _value: calls.append("release"),
     )
 
     class _FailTask(Task[None]):

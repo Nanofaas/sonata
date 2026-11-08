@@ -43,16 +43,25 @@ class MissingReuseKey(ReusableTask):
 MissingReuseKey()
 
 
-def acquire_name(_inputs: TaskInputs) -> str:
-    return "builder"
+class AcquireBuilder(Task[str]):
+    title = "Acquire builder"
+
+    @override
+    def run(self, inputs: TaskInputs) -> TaskOutcome[str]:
+        return TaskOutcome(value="builder")
 
 
-def release_name(_inputs: TaskInputs, name: str) -> None:
-    assert name == "builder"
+class ReleaseBuilder(Task[None]):
+    title = "Release builder"
+
+    @override
+    def run(self, inputs: TaskInputs) -> TaskOutcome[None]:
+        assert inputs.upstream() == "builder"
+        return TaskOutcome()
 
 
 builder: Resource[str] = Resource(
     title="Acquire builder",
-    acquire=acquire_name,
-    release=release_name,
+    acquire=AcquireBuilder(),
+    release=ReleaseBuilder(),
 )

@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 import pytest
+from support import task_resource
 
 from sonata_engine import Resource, Workflow
 from sonata_engine.core.inputs import TaskInputs
@@ -31,10 +32,10 @@ class _Use(Task[None]):
 
 
 def _resource(title: str, value: object, calls: list[str], **kwargs) -> Resource:
-    return Resource(
+    return task_resource(
         title=title,
-        acquire=lambda _inputs: value,
-        release=lambda _inputs, released: calls.append(f"{title}:{released}"),
+        acquire_fn=lambda _inputs: value,
+        release_fn=lambda _inputs, released: calls.append(f"{title}:{released}"),
         **kwargs,
     )
 
@@ -68,10 +69,10 @@ def test_revive_rebuilds_the_value_the_release_expects(tmp_path: Path) -> None:
     would break on a dict. The resource says how to read its own record back.
     """
     seen: list[object] = []
-    vm = Resource(
+    vm = task_resource(
         title="Acquire vm",
-        acquire=lambda _inputs: _VmInfo(name="stack", host="10.0.0.1"),
-        release=lambda _inputs, info: seen.append(info),
+        acquire_fn=lambda _inputs: _VmInfo(name="stack", host="10.0.0.1"),
+        release_fn=lambda _inputs, info: seen.append(info),
         revive=lambda raw: _VmInfo(**raw),
     )
     workflow = Workflow(workflow_id="wf", keep=True)
@@ -119,10 +120,10 @@ def test_a_retained_resource_the_caller_cannot_build_is_reported(
 def test_one_failing_release_does_not_strand_the_others(tmp_path: Path) -> None:
     calls: list[str] = []
     stack = _resource("Acquire stack", "s", calls)
-    broken = Resource(
+    broken = task_resource(
         title="Acquire broken",
-        acquire=lambda _inputs: "b",
-        release=_boom,
+        acquire_fn=lambda _inputs: "b",
+        release_fn=_boom,
     )
     path = _kept_run(tmp_path, (stack, broken), calls)
 

@@ -7,6 +7,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
+from support import task_resource
 
 from sonata_engine.core.inputs import TaskInputs
 from sonata_engine.core.outcome import TaskOutcome
@@ -35,10 +36,10 @@ class _RecordTask(Task[None]):
 
 
 def _resource(name: str, calls: list[str], *, always_release: bool = False) -> Resource:
-    return Resource(
+    return task_resource(
         title=f"Acquire {name}",
-        acquire=lambda _inputs: calls.append(f"acquire.{name}"),
-        release=lambda _inputs, _value: calls.append(f"release.{name}"),
+        acquire_fn=lambda _inputs: calls.append(f"acquire.{name}"),
+        release_fn=lambda _inputs, _value: calls.append(f"release.{name}"),
         always_release=always_release,
     )
 
@@ -203,8 +204,12 @@ def test_structurally_equal_resources_keep_distinct_runtime_values_and_releases(
     def release(_inputs: TaskInputs, value: str) -> None:
         released.append(value)
 
-    first = Resource(title="Acquire service", acquire=acquire, release=release)
-    second = Resource(title="Acquire service", acquire=acquire, release=release)
+    first = task_resource(
+        title="Acquire service", acquire_fn=acquire, release_fn=release
+    )
+    second = task_resource(
+        title="Acquire service", acquire_fn=acquire, release_fn=release
+    )
 
     class _UseServices(Task[None]):
         title = "Use services"
@@ -222,22 +227,22 @@ def test_structurally_equal_resources_keep_distinct_runtime_values_and_releases(
 def test_resource_dependencies_acquire_and_release_in_dependency_order() -> None:
     calls: list[str] = []
     vm = _resource("vm", calls)
-    helm = Resource(
+    helm = task_resource(
         title="Acquire helm",
-        acquire=lambda inputs: (
+        acquire_fn=lambda inputs: (
             calls.append(f"acquire.helm:{inputs.resource(vm)}") or "helm"
         ),
-        release=lambda inputs, _value: calls.append(
+        release_fn=lambda inputs, _value: calls.append(
             f"release.helm:{inputs.resource(vm)}"
         ),
         requires=(vm,),
     )
-    function = Resource(
+    function = task_resource(
         title="Acquire function",
-        acquire=lambda inputs: (
+        acquire_fn=lambda inputs: (
             calls.append(f"acquire.function:{inputs.resource(helm)}") or "function"
         ),
-        release=lambda inputs, _value: calls.append(
+        release_fn=lambda inputs, _value: calls.append(
             f"release.function:{inputs.resource(helm)}"
         ),
         requires=(helm,),
@@ -270,10 +275,10 @@ def test_resource_dependencies_acquire_and_release_in_dependency_order() -> None
 
 def test_resource_dependency_cycle_reports_the_cycle_path() -> None:
     first = _resource("first", [])
-    second = Resource(
+    second = task_resource(
         title="Acquire second",
-        acquire=lambda _inputs: None,
-        release=lambda _inputs, _value: None,
+        acquire_fn=lambda _inputs: None,
+        release_fn=lambda _inputs, _value: None,
         requires=(first,),
     )
     object.__setattr__(first, "requires", (second,))
@@ -305,16 +310,16 @@ def test_shared_dependency_is_acquired_once_and_siblings_keep_declaration_order(
 ):
     calls: list[str] = []
     vm = _resource("vm", calls)
-    first = Resource(
+    first = task_resource(
         title="Acquire first",
-        acquire=lambda inputs: calls.append(f"acquire.first:{inputs.resource(vm)}"),
-        release=lambda _inputs, _value: calls.append("release.first"),
+        acquire_fn=lambda inputs: calls.append(f"acquire.first:{inputs.resource(vm)}"),
+        release_fn=lambda _inputs, _value: calls.append("release.first"),
         requires=(vm,),
     )
-    second = Resource(
+    second = task_resource(
         title="Acquire second",
-        acquire=lambda inputs: calls.append(f"acquire.second:{inputs.resource(vm)}"),
-        release=lambda _inputs, _value: calls.append("release.second"),
+        acquire_fn=lambda inputs: calls.append(f"acquire.second:{inputs.resource(vm)}"),
+        release_fn=lambda _inputs, _value: calls.append("release.second"),
         requires=(vm,),
     )
     workflow = _workflow()
@@ -341,10 +346,10 @@ def test_resource_value_is_visible_only_to_declared_consumers_and_release() -> N
         assert released is value
         calls.append("release")
 
-    database = Resource[dict[str, str]](
+    database = task_resource(
         title="Acquire database",
-        acquire=lambda _inputs: value,
-        release=release_database,
+        acquire_fn=lambda _inputs: value,
+        release_fn=release_database,
     )
 
     class _ReadDatabase(Task[None]):
@@ -361,10 +366,10 @@ def test_resource_value_is_visible_only_to_declared_consumers_and_release() -> N
 
 
 def test_consumer_cannot_read_undeclared_resource() -> None:
-    resource = Resource[None](
+    resource = task_resource(
         title="Acquire database",
-        acquire=lambda _inputs: None,
-        release=lambda _inputs, _value: None,
+        acquire_fn=lambda _inputs: None,
+        release_fn=lambda _inputs, _value: None,
     )
 
     class _ReadUndeclared(Task[None]):
@@ -411,10 +416,10 @@ def test_acquire_failure_releases_earlier_resources_only() -> None:
     def bad_acquire(_inputs: TaskInputs) -> None:
         raise RuntimeError("acquire exploded")
 
-    bad = Resource(
+    bad = task_resource(
         title="Acquire bad",
-        acquire=bad_acquire,
-        release=lambda _inputs, _value: calls.append("release.bad"),
+        acquire_fn=bad_acquire,
+        release_fn=lambda _inputs, _value: calls.append("release.bad"),
     )
     workflow = _workflow()
     workflow.add(_RecordTask("A", calls), requires=(good,))
@@ -431,8 +436,8 @@ def test_consumer_failure_and_release_failure_are_combined() -> None:
     def fail_release(_inputs: TaskInputs, _value: object) -> None:
         raise RuntimeError("release failed")
 
-    resource = Resource(
-        title="Acquire res", acquire=lambda _inputs: None, release=fail_release
+    resource = task_resource(
+        title="Acquire res", acquire_fn=lambda _inputs: None, release_fn=fail_release
     )
     workflow = _workflow()
     workflow.add(_RecordTask("Boom", [], fail=True), requires=(resource,))
@@ -448,8 +453,8 @@ def test_release_failure_alone_is_raised() -> None:
     def fail_release(_inputs: TaskInputs, _value: object) -> None:
         raise RuntimeError("release failed")
 
-    resource = Resource(
-        title="Acquire res", acquire=lambda _inputs: None, release=fail_release
+    resource = task_resource(
+        title="Acquire res", acquire_fn=lambda _inputs: None, release_fn=fail_release
     )
     workflow = _workflow()
     workflow.add(_RecordTask("Use", []), requires=(resource,))
@@ -613,10 +618,10 @@ def test_keep_releases_when_the_retained_value_cannot_be_journaled(
     release it.
     """
     calls: list[str] = []
-    vm = Resource(
+    vm = task_resource(
         title="Acquire vm",
-        acquire=lambda _inputs: {"1.2.3.4"},
-        release=lambda _inputs, _value: calls.append("release.vm"),
+        acquire_fn=lambda _inputs: {"1.2.3.4"},
+        release_fn=lambda _inputs, _value: calls.append("release.vm"),
     )
     workflow = _workflow(keep=True)
     workflow.add(_RecordTask("Use", calls), requires=(vm,))
@@ -646,10 +651,10 @@ def test_all_finalizers_run_after_release_and_journal_failures(
         raise RuntimeError("release failed")
 
     first = _resource("first", calls)
-    second = Resource(
+    second = task_resource(
         title="Acquire second",
-        acquire=lambda _inputs: calls.append("acquire.second"),
-        release=_failed_release,
+        acquire_fn=lambda _inputs: calls.append("acquire.second"),
+        release_fn=_failed_release,
     )
     workflow = _workflow()
     workflow.add(_RecordTask("Use", calls), requires=(first, second))
@@ -676,10 +681,10 @@ def test_base_exception_in_finalizer_does_not_abort_remaining_cleanup() -> None:
         calls.append("release.second")
         raise KeyboardInterrupt
 
-    second = Resource(
+    second = task_resource(
         title="Acquire second",
-        acquire=lambda _inputs: calls.append("acquire.second"),
-        release=_interrupt_release,
+        acquire_fn=lambda _inputs: calls.append("acquire.second"),
+        release_fn=_interrupt_release,
     )
     workflow = _workflow()
     workflow.add(_RecordTask("Use", calls), requires=(first, second))
@@ -698,10 +703,10 @@ def test_finalizer_base_exception_remains_primary_after_task_failure() -> None:
         calls.append("release.second")
         raise KeyboardInterrupt
 
-    second = Resource(
+    second = task_resource(
         title="Acquire second",
-        acquire=lambda _inputs: calls.append("acquire.second"),
-        release=_interrupt_release,
+        acquire_fn=lambda _inputs: calls.append("acquire.second"),
+        release_fn=_interrupt_release,
     )
     workflow = _workflow()
     workflow.add(
@@ -729,27 +734,27 @@ def test_dependency_chain_releases_in_reverse_on_failure_path() -> None:
     """
     calls: list[str] = []
 
-    vm = Resource(
+    vm = task_resource(
         title="Acquire vm",
-        acquire=lambda _inputs: calls.append("acquire.vm") or "vm-value",
-        release=lambda _inputs, value: calls.append(f"release.vm:{value}"),
+        acquire_fn=lambda _inputs: calls.append("acquire.vm") or "vm-value",
+        release_fn=lambda _inputs, value: calls.append(f"release.vm:{value}"),
     )
-    helm = Resource(
+    helm = task_resource(
         title="Acquire helm",
-        acquire=lambda inputs: (
+        acquire_fn=lambda inputs: (
             calls.append(f"acquire.helm:{inputs.resource(vm)}") or "helm-value"
         ),
-        release=lambda inputs, value: calls.append(
+        release_fn=lambda inputs, value: calls.append(
             f"release.helm:{value}:{inputs.resource(vm)}"
         ),
         requires=(vm,),
     )
-    fn = Resource(
+    fn = task_resource(
         title="Acquire fn",
-        acquire=lambda inputs: (
+        acquire_fn=lambda inputs: (
             calls.append(f"acquire.fn:{inputs.resource(helm)}") or "fn-value"
         ),
-        release=lambda inputs, value: calls.append(
+        release_fn=lambda inputs, value: calls.append(
             f"release.fn:{value}:{inputs.resource(helm)}"
         ),
         requires=(helm,),
@@ -783,28 +788,28 @@ def _diamond_resource(depth: int) -> Resource:
     (instead of returning early) doubles the work per level on a graph shaped
     like this -- exponential in `depth`.
     """
-    current = Resource(
+    current = task_resource(
         title="Acquire leaf",
-        acquire=lambda _inputs: None,
-        release=lambda _inputs, _value: None,
+        acquire_fn=lambda _inputs: None,
+        release_fn=lambda _inputs, _value: None,
     )
     for level in range(depth):
-        a = Resource(
+        a = task_resource(
             title=f"Acquire a{level}",
-            acquire=lambda _inputs: None,
-            release=lambda _inputs, _value: None,
+            acquire_fn=lambda _inputs: None,
+            release_fn=lambda _inputs, _value: None,
             requires=(current,),
         )
-        b = Resource(
+        b = task_resource(
             title=f"Acquire b{level}",
-            acquire=lambda _inputs: None,
-            release=lambda _inputs, _value: None,
+            acquire_fn=lambda _inputs: None,
+            release_fn=lambda _inputs, _value: None,
             requires=(current,),
         )
-        current = Resource(
+        current = task_resource(
             title=f"Acquire c{level}",
-            acquire=lambda _inputs: None,
-            release=lambda _inputs, _value: None,
+            acquire_fn=lambda _inputs: None,
+            release_fn=lambda _inputs, _value: None,
             requires=(a, b),
         )
     return current

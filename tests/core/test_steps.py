@@ -4,11 +4,11 @@ import json
 from pathlib import Path
 
 import pytest
+from support import task_resource
 
 from sonata_engine import (
     Evidence,
     JournalConfig,
-    Resource,
     ReusableTask,
     Selection,
     Steps,
@@ -180,10 +180,10 @@ def test_a_failing_step_still_releases_the_composites_resources() -> None:
     leak it: cleanup runs exactly as it would for a plain consumer task.
     """
     released: list[str] = []
-    resource = Resource[str](
+    resource = task_resource(
         title="Acquire token",
-        acquire=lambda _inputs: "token-42",
-        release=lambda _inputs, value: released.append(value),
+        acquire_fn=lambda _inputs: "token-42",
+        release_fn=lambda _inputs, value: released.append(value),
     )
 
     class Boom(Task[None]):

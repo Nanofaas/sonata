@@ -3,10 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from support import task_resource
 
 from sonata_engine import (
     JournalConfig,
-    Resource,
     Selection,
     SelectionError,
     Task,
@@ -28,10 +28,10 @@ class _Recording(Task[None]):
 
 
 def _workflow(log: list[str]) -> Workflow:
-    resource = Resource(
+    resource = task_resource(
         title="Acquire vm",
-        acquire=lambda _inputs: log.append("acquire"),
-        release=lambda _inputs, _value: log.append("release"),
+        acquire_fn=lambda _inputs: log.append("acquire"),
+        release_fn=lambda _inputs, _value: log.append("release"),
     )
     workflow = Workflow(workflow_id="demo")
     workflow.add(_Recording("Build", log))
@@ -70,10 +70,10 @@ def test_run_releases_the_resource_when_a_selected_task_fails() -> None:
         def run(self, inputs: TaskInputs) -> TaskOutcome[None]:
             raise RuntimeError("boom")
 
-    resource = Resource(
+    resource = task_resource(
         title="Acquire vm",
-        acquire=lambda _inputs: log.append("acquire"),
-        release=lambda _inputs, _value: log.append("release"),
+        acquire_fn=lambda _inputs: log.append("acquire"),
+        release_fn=lambda _inputs, _value: log.append("release"),
     )
     workflow = Workflow(workflow_id="demo")
     workflow.add(_Recording("Build", log))

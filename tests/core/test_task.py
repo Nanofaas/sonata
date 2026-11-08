@@ -7,10 +7,10 @@ from pathlib import Path
 from typing import override
 
 import pytest
+from support import task_resource
 
 from sonata_engine.core.inputs import TaskInputs
 from sonata_engine.core.outcome import Evidence, TaskOutcome
-from sonata_engine.core.resource_task import Resource
 from sonata_engine.core.task import ReusableTask, Task
 from sonata_engine.errors import ResourceUnavailableError, UndeclaredResourceError
 
@@ -81,15 +81,15 @@ def test_evidence_digest_defaults_to_none() -> None:
 
 
 def test_task_inputs_only_exposes_declared_resource_values() -> None:
-    database = Resource[str](
+    database = task_resource(
         title="Acquire database",
-        acquire=lambda _inputs: "postgres://db",
-        release=lambda _inputs, _value: None,
+        acquire_fn=lambda _inputs: "postgres://db",
+        release_fn=lambda _inputs, _value: None,
     )
-    cache = Resource[None](
+    cache = task_resource(
         title="Acquire cache",
-        acquire=lambda _inputs: None,
-        release=lambda _inputs, _value: None,
+        acquire_fn=lambda _inputs: None,
+        release_fn=lambda _inputs, _value: None,
     )
 
     inputs = TaskInputs._for_resources(
@@ -102,10 +102,10 @@ def test_task_inputs_only_exposes_declared_resource_values() -> None:
 
 
 def test_task_inputs_rejects_a_declared_but_unavailable_resource() -> None:
-    cache = Resource[None](
+    cache = task_resource(
         title="Acquire cache",
-        acquire=lambda _inputs: None,
-        release=lambda _inputs, _value: None,
+        acquire_fn=lambda _inputs: None,
+        release_fn=lambda _inputs, _value: None,
     )
 
     inputs = TaskInputs._for_resources({}, {cache})
@@ -115,10 +115,10 @@ def test_task_inputs_rejects_a_declared_but_unavailable_resource() -> None:
 
 
 def test_task_inputs_constructor_snapshots_mutable_arguments() -> None:
-    database = Resource[str](
+    database = task_resource(
         title="Acquire database",
-        acquire=lambda _inputs: "postgres://db",
-        release=lambda _inputs, _value: None,
+        acquire_fn=lambda _inputs: "postgres://db",
+        release_fn=lambda _inputs, _value: None,
     )
     values: dict[int, object] = {id(database): "postgres://original"}
     accessible = {id(database)}

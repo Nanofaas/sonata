@@ -109,13 +109,26 @@ class ScanImages(Task[tuple[str, ...]]):
         return TaskOutcome(value=built)
 
 
-def _start_builder_vm(inputs: TaskInputs) -> str:
-    workflow_log("[resource] builder VM up")
-    return "builder-vm-1"
+class StartBuilderVm(Task[str]):
+    """Acquire half of the builder VM resource: its value is the VM id."""
+
+    title = "Acquire builder VM"
+
+    def run(self, inputs: TaskInputs) -> TaskOutcome[str]:
+        """Log the VM coming up and return its id."""
+        workflow_log("[resource] builder VM up")
+        return TaskOutcome(value="builder-vm-1")
 
 
-def _stop_builder_vm(inputs: TaskInputs, vm_id: str) -> None:
-    workflow_log(f"[resource] builder VM down ({vm_id})")
+class StopBuilderVm(Task[None]):
+    """Release half: the acquired VM id arrives as the upstream value."""
+
+    title = "Release builder VM"
+
+    def run(self, inputs: TaskInputs) -> TaskOutcome[None]:
+        """Log the VM going down."""
+        workflow_log(f"[resource] builder VM down ({inputs.upstream()})")
+        return TaskOutcome()
 
 
 class PushImages(Task[None]):
@@ -136,8 +149,8 @@ class PushImages(Task[None]):
 def main() -> None:
     builder_vm = Resource(
         title="Acquire builder VM",
-        acquire=_start_builder_vm,
-        release=_stop_builder_vm,
+        acquire=StartBuilderVm(),
+        release=StopBuilderVm(),
     )
 
     workflow = Workflow(workflow_id="demo-release")

@@ -4,8 +4,9 @@ from collections.abc import Generator
 from contextlib import contextmanager
 
 import pytest
+from support import task_resource
 
-from sonata_engine import Resource, Task, TaskInputs, TaskOutcome, Workflow
+from sonata_engine import Task, TaskInputs, TaskOutcome, Workflow
 from sonata_engine.workflow.context import bind_workflow_sink
 from sonata_engine.workflow.events import WorkflowEvent
 
@@ -82,10 +83,10 @@ def test_the_scope_names_a_step_under_the_compiled_unit_id() -> None:
 
 def test_the_step_receives_the_upstream_and_the_composite_resources() -> None:
     seen: list[object] = []
-    resource = Resource[str](
+    resource = task_resource(
         title="Acquire token",
-        acquire=lambda _inputs: "token-42",
-        release=lambda _inputs, _value: None,
+        acquire_fn=lambda _inputs: "token-42",
+        release_fn=lambda _inputs, _value: None,
     )
 
     class Reader(Task[None]):

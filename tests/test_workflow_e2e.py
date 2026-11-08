@@ -5,6 +5,8 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 
+from support import task_resource
+
 from sonata_engine import (
     Evidence,
     JournalConfig,
@@ -109,10 +111,10 @@ class _Report(Task[None]):
 
 
 def _workflow(operations: list[str]) -> Workflow:
-    builder = Resource[str](
+    builder = task_resource(
         title="Acquire builder",
-        acquire=lambda _inputs: operations.append("acquire") or "builder-1",
-        release=lambda _inputs, _value: operations.append("release"),
+        acquire_fn=lambda _inputs: operations.append("acquire") or "builder-1",
+        release_fn=lambda _inputs, _value: operations.append("release"),
     )
     package = Steps(
         title="Package artifact",

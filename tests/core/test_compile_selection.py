@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from support import task_resource
 
 from sonata_engine.core.inputs import TaskInputs
 from sonata_engine.core.outcome import TaskOutcome
@@ -20,8 +21,10 @@ class _Noop(Task[None]):
 
 
 def _resource(title: str = "Acquire vm") -> Resource:
-    return Resource(
-        title=title, acquire=lambda _inputs: None, release=lambda _inputs, _value: None
+    return task_resource(
+        title=title,
+        acquire_fn=lambda _inputs: None,
+        release_fn=lambda _inputs, _value: None,
     )
 
 
@@ -69,16 +72,16 @@ def test_only_keeps_one_consumer_and_its_resource_lifecycle() -> None:
 
 def test_only_retains_transitive_resource_lifecycle() -> None:
     vm = _resource()
-    helm = Resource(
+    helm = task_resource(
         title="Acquire helm",
-        acquire=lambda _inputs: None,
-        release=lambda _inputs, _value: None,
+        acquire_fn=lambda _inputs: None,
+        release_fn=lambda _inputs, _value: None,
         requires=(vm,),
     )
-    function = Resource(
+    function = task_resource(
         title="Acquire function",
-        acquire=lambda _inputs: None,
-        release=lambda _inputs, _value: None,
+        acquire_fn=lambda _inputs: None,
+        release_fn=lambda _inputs, _value: None,
         requires=(helm,),
     )
     workflow = Workflow(workflow_id="demo")

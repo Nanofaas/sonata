@@ -5,10 +5,10 @@ import json
 from pathlib import Path
 
 import pytest
+from support import task_resource
 
 from sonata_engine.core.inputs import TaskInputs
 from sonata_engine.core.outcome import Evidence, TaskOutcome
-from sonata_engine.core.resource_task import Resource
 from sonata_engine.core.task import ReusableTask, Task
 from sonata_engine.core.workflow import Workflow
 from sonata_engine.errors import CorruptJournalError, WorkflowTopologyMismatchError
@@ -130,10 +130,10 @@ def test_retained_resource_finalizer_is_journaled_as_skipped(
     tmp_path: Path,
 ) -> None:
     config = JournalConfig(path=tmp_path / "journal.jsonl")
-    resource = Resource(
+    resource = task_resource(
         title="Acquire cluster",
-        acquire=lambda _inputs: None,
-        release=lambda _inputs, _value: None,
+        acquire_fn=lambda _inputs: None,
+        release_fn=lambda _inputs, _value: None,
     )
     workflow = Workflow(workflow_id="wf", keep=True)
     workflow.add(_Ok("Use cluster"), requires=(resource,))
@@ -291,10 +291,10 @@ def test_records_started_then_failed(tmp_path: Path) -> None:
 
 
 def test_records_finalizer_outcomes(tmp_path: Path) -> None:
-    resource = Resource(
+    resource = task_resource(
         title="Acquire db",
-        acquire=lambda _inputs: None,
-        release=lambda _inputs, _value: None,
+        acquire_fn=lambda _inputs: None,
+        release_fn=lambda _inputs, _value: None,
     )
     workflow = Workflow(workflow_id="wf")
     workflow.add(_Ok("Use"), requires=(resource,))
@@ -336,7 +336,9 @@ def test_release_failure_records_failed_outcome(tmp_path: Path) -> None:
     def _boom(_inputs: TaskInputs, _value: object) -> None:
         raise RuntimeError("release boom")
 
-    resource = Resource(title="Acquire db", acquire=lambda _inputs: None, release=_boom)
+    resource = task_resource(
+        title="Acquire db", acquire_fn=lambda _inputs: None, release_fn=_boom
+    )
     workflow = Workflow(workflow_id="wf")
     workflow.add(_Ok("Use"), requires=(resource,))
     config = JournalConfig(path=tmp_path / "journal.jsonl")
@@ -467,10 +469,10 @@ def test_no_journal_writes_no_file(tmp_path: Path) -> None:
 def _kept(tmp_path: Path, value: object, *, always_release: bool = False):
     """One kept run holding a single resource; returns (calls, journal path)."""
     calls: list[str] = []
-    resource = Resource(
+    resource = task_resource(
         title="Acquire vm",
-        acquire=lambda _inputs: value,
-        release=lambda _inputs, released: calls.append(f"release:{released}"),
+        acquire_fn=lambda _inputs: value,
+        release_fn=lambda _inputs, released: calls.append(f"release:{released}"),
         always_release=always_release,
     )
     workflow = Workflow(workflow_id="wf", keep=True)

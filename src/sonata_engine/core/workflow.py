@@ -171,6 +171,9 @@ class _StepScope:
             resume=self.resume,
         )
 
+    def rebased(self, inputs: TaskInputs) -> _StepScope:
+        return replace(self, base_inputs=inputs)
+
 
 @dataclass
 class _MergeState:
@@ -474,7 +477,7 @@ class Workflow:
         """Run one consumer or acquire unit, recording its journal outcome.
 
         A failure is recorded and then propagates. Consumers and acquire units
-        consult the same resume decision matrix. `Resource.acquire_idempotent`
+        consult the same resume decision matrix. The acquire task's `idempotent`
         controls whether an interrupted or failed acquire can retry; a passed
         acquire always reruns because it is non-reusable. Releases are handled
         separately by `_release`.
@@ -546,6 +549,8 @@ class Workflow:
 
         A release is a non-reusable finalizer: it always runs, never consults prior
         state, but its outcome is still recorded when a journal is configured.
+        The release task reads the acquired value as `inputs.upstream()`; a
+        `Steps` release journals its steps beneath this unit, never resuming.
         """
         resource = compiled_task.resource
         if resource is not None and id(resource) in retained_resources:
@@ -568,8 +573,15 @@ class Workflow:
             with _task_lifecycle(task_id=task_id, title=compiled_task.task.title):
                 if resource is None:
                     raise RuntimeError("release task has no resource")
+                base = state.inputs_for((resource, *resource.requires))
                 outcome = compiled_task.task.run(
-                    state.inputs_for((resource, *resource.requires))
+                    replace(
+                        base,
+                        _upstream=base.resource(resource),
+                        _step_scope=_StepScope(
+                            prefix=task_id, base_inputs=base, jrnl=jrnl, resume=False
+                        ),
+                    )
                 )
                 if not isinstance(outcome, TaskOutcome):
                     raise InvalidTaskOutcomeError(
@@ -730,7 +742,7 @@ class Workflow:
                     title=resource.title,
                     resource=resource,
                     operation=ResourceOperation.ACQUIRE,
-                    idempotent=resource.acquire_idempotent,
+                    idempotent=resource.acquire.idempotent,
                 )
                 merged.append(
                     CompiledTask(

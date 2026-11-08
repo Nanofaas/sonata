@@ -5,11 +5,11 @@ import hashlib
 import json
 
 import pytest
+from support import task_resource
 
 from sonata_engine.core.compiled import CompiledTask, CompiledWorkflow
 from sonata_engine.core.inputs import TaskInputs
 from sonata_engine.core.outcome import TaskOutcome
-from sonata_engine.core.resource_task import Resource
 from sonata_engine.core.task import ReusableTask, Task
 from sonata_engine.core.workflow import Workflow
 from sonata_engine.errors import MissingAcquireUnitError
@@ -144,15 +144,15 @@ def test_reusable_task_configuration_changes_workflow_fingerprint() -> None:
 
 
 def test_resource_dependency_edges_change_workflow_fingerprint() -> None:
-    vm = Resource(
+    vm = task_resource(
         title="Acquire vm",
-        acquire=lambda _inputs: None,
-        release=lambda _inputs, _value: None,
+        acquire_fn=lambda _inputs: None,
+        release_fn=lambda _inputs, _value: None,
     )
-    helm = Resource(
+    helm = task_resource(
         title="Acquire helm",
-        acquire=lambda _inputs: None,
-        release=lambda _inputs, _value: None,
+        acquire_fn=lambda _inputs: None,
+        release_fn=lambda _inputs, _value: None,
         requires=(vm,),
     )
     task = _NoopTask("Deploy")
@@ -205,10 +205,10 @@ def test_fingerprint_raises_typed_error_for_resource_with_no_acquire_unit() -> N
     names a resource with no matching acquire unit must fail with a readable,
     typed error instead of a bare `KeyError`.
     """
-    orphan = Resource(
+    orphan = task_resource(
         title="Acquire orphan",
-        acquire=lambda _inputs: None,
-        release=lambda _inputs, _value: None,
+        acquire_fn=lambda _inputs: None,
+        release_fn=lambda _inputs, _value: None,
     )
     task = CompiledTask(
         task_id="001.use", task=_NoopTask("Use"), required_resources=(orphan,)
