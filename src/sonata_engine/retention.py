@@ -110,6 +110,7 @@ def release_retained(
                         base_inputs=inputs,
                         jrnl=None,
                         resume=False,
+                        journal_errors=errors,
                     ),
                 )
             )

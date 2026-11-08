@@ -88,12 +88,16 @@ def _release_members(
     members: tuple[Resource[Any], ...],
     values: Members,
 ) -> list[BaseException]:
-    """Release `members` in reverse, attempting every one; return the failures."""
+    """Release `members` in reverse, attempting every one; return the failures.
+
+    Never resumed (a release always runs, like the engine's own `_release`) and
+    never stopped by a failing journal: those failures are returned too.
+    """
     errors: list[BaseException] = []
-    rebased = scope.rebased(_with_members(inputs, members, values))
+    cleanup = scope.for_cleanup(_with_members(inputs, members, values), errors)
     for member in reversed(members):
         try:
-            rebased.run_step(
+            cleanup.run_step(
                 member.release,
                 f"release-{slugify(member.title)}",
                 values[member.title],
@@ -145,7 +149,7 @@ class _AcquireMembers(Task[Members]):
                 acquired.append(member)
         except BaseException as exc:
             for error in _release_members(scope, inputs, tuple(acquired), values):
-                exc.add_note(f"Cleanup error: {error}")
+                exc.add_note(f"Cleanup error: {error!r}")
             raise
         return TaskOutcome(value=values)
 
@@ -190,13 +194,13 @@ def _raise_all(errors: list[BaseException]) -> None:
     if critical is not None:
         for error in errors:
             if error is not critical:
-                critical.add_note(f"Cleanup error: {error}")
+                critical.add_note(f"Cleanup error: {error!r}")
         raise critical
     if len(errors) == 1:
         raise errors[0]
     raise RuntimeError(
         "releasing composite members failed:\n"
-        + "\n".join(str(error) for error in errors)
+        + "\n".join(repr(error) for error in errors)
     )
 
 
@@ -221,11 +225,18 @@ def compose(
     _unique_slugs(collect)
 
     member_ids = {id(member) for member in members}
+    earlier: set[int] = set()
     requires: dict[int, Resource[Any]] = {}
     for member in members:
         for dependency in member.requires:
             if id(dependency) not in member_ids:
                 requires.setdefault(id(dependency), dependency)
+            elif id(dependency) not in earlier:
+                raise ValueError(
+                    f"{member.title!r} requires {dependency.title!r}, which is "
+                    "not an earlier member: order the members so it comes first"
+                )
+        earlier.add(id(member))
 
     def revive(raw: dict[str, Any]) -> Members:
         return Members(

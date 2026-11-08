@@ -96,6 +96,7 @@ def _execute_recorded(
     jrnl: Journal | None,
     resume: bool,
     on_outcome: Callable[[TaskOutcome[Any]], None] | None = None,
+    journal_errors: list[BaseException] | None = None,
 ) -> TaskExecution:
     """Run one thing that has a journal identity, recording its outcome.
 
@@ -103,6 +104,8 @@ def _execute_recorded(
     so the resume decision, the started/passed/failed records, the outcome
     validation and the journal-failure note exist once. Release units keep
     their own path in `_release`: cleanup must not abort on a journal error.
+    A step run as cleanup passes `journal_errors`: a journal write failing then
+    lands there instead of aborting, and the step runs anyway.
 
     `make_inputs` is a callable, not a value, because it is called inside the
     lifecycle -- a failure resolving resources must be reported as a task
@@ -112,10 +115,20 @@ def _execute_recorded(
     if skip is not None:
         return skip
 
+    def record(write: Callable[[], None]) -> None:
+        if journal_errors is None:
+            write()
+            return
+        try:
+            write()
+        except OSError as journal_error:
+            journal_error.add_note(f"while recording {task_id}")
+            journal_errors.append(journal_error)
+
     attempt = jrnl.next_attempt(task_id) if jrnl is not None else 0
     if jrnl is not None:
         # Flush the started record BEFORE executing, so a crash mid-task is durable.
-        jrnl.record_started(task_id, attempt)
+        record(lambda: jrnl.record_started(task_id, attempt))
     try:
         with _task_lifecycle(task_id=task_id, title=task.title):
             outcome = task.run(make_inputs())
@@ -137,7 +150,7 @@ def _execute_recorded(
                 exc.add_note(f"Failed to record task failure: {journal_error}")
         raise
     if jrnl is not None:
-        jrnl.record_passed(task_id, attempt, outcome.evidence)
+        record(lambda: jrnl.record_passed(task_id, attempt, outcome.evidence))
     return TaskExecution(task_id=task_id, status="passed", outcome=outcome)
 
 
@@ -149,6 +162,8 @@ class _StepScope:
     base_inputs: TaskInputs
     jrnl: Journal | None
     resume: bool
+    # Set on a cleanup scope: journal failures are collected here, not raised.
+    journal_errors: list[BaseException] | None = None
 
     def run_step(self, step: Task[Any], slug: str, upstream: Any) -> TaskExecution:  # noqa: ANN401
         if not slug or "/" in slug:
@@ -171,10 +186,16 @@ class _StepScope:
             make_inputs=make_inputs,
             jrnl=self.jrnl,
             resume=self.resume,
+            journal_errors=self.journal_errors,
         )
 
     def rebased(self, inputs: TaskInputs) -> _StepScope:
         return replace(self, base_inputs=inputs)
+
+    def for_cleanup(
+        self, inputs: TaskInputs, errors: list[BaseException]
+    ) -> _StepScope:
+        return replace(self, base_inputs=inputs, resume=False, journal_errors=errors)
 
 
 @dataclass
@@ -234,15 +255,27 @@ def _reject_required_members(
     """Refuse a composite member that is also required outside its composite.
 
     The composite acquires its members itself, so a direct requirement would
-    acquire one twice. Members never reach `state` through a composite (its
+    acquire one twice -- and so would two composites sharing a member, at any
+    depth of nesting. Members never reach `state` through a composite (its
     `requires` excludes them), so any requirement naming one is a direct one.
     """
-    owner = {
-        id(member): resource
-        for resource in state.resources.values()
-        if isinstance(resource.acquire, _AcquireMembers)
-        for member in resource.acquire.members
-    }
+    owner: dict[int, Resource[Any]] = {}
+
+    def claim(composite: _AcquireMembers, top: Resource[Any]) -> None:
+        for member in composite.members:
+            if id(member) in owner:
+                raise CompositeMemberRequiredError(
+                    f"{member.title!r} is a member of composite "
+                    f"{owner[id(member)].title!r} and of {top.title!r}: "
+                    "a resource can belong to one composite only"
+                )
+            owner[id(member)] = top
+            if isinstance(member.acquire, _AcquireMembers):
+                claim(member.acquire, top)
+
+    for resource in state.resources.values():
+        if isinstance(resource.acquire, _AcquireMembers):
+            claim(resource.acquire, resource)
     requirers = [(task.title, requires) for task, requires in definitions] + [
         (resource.title, resource.requires) for resource in state.resources.values()
     ]
@@ -609,7 +642,11 @@ class Workflow:
                         base,
                         _upstream=base.resource(resource),
                         _step_scope=_StepScope(
-                            prefix=task_id, base_inputs=base, jrnl=jrnl, resume=False
+                            prefix=task_id,
+                            base_inputs=base,
+                            jrnl=jrnl,
+                            resume=False,
+                            journal_errors=release_errors,
                         ),
                     )
                 )

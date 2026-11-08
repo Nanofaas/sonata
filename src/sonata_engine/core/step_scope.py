@@ -31,3 +31,13 @@ class _StepScopeProtocol(Protocol):
     def rebased(self, inputs: TaskInputs) -> _StepScopeProtocol:
         """Return this scope, same prefix, journal and resume, over new inputs."""
         ...
+
+    def for_cleanup(
+        self, inputs: TaskInputs, errors: list[BaseException]
+    ) -> _StepScopeProtocol:
+        """Return this scope over `inputs` for releasing.
+
+        It never resumes, and collects journal write failures into `errors`
+        instead of raising them, so every release still runs.
+        """
+        ...

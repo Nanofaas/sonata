@@ -173,7 +173,7 @@ def test_compose_acquire_unwinds_on_interrupt() -> None:
     with pytest.raises(KeyboardInterrupt):
         _run(platform, _consumer(calls))
 
-    assert calls[-1] == "release.a"
+    assert calls == ["acquire.a", "acquire.b", "release.a"]
 
 
 def test_unwind_failure_is_a_note_on_the_original_error() -> None:
@@ -254,7 +254,7 @@ def test_a_critical_release_failure_wins() -> None:
     with pytest.raises(KeyboardInterrupt) as raised:
         _run(platform, _consumer(calls))
 
-    assert calls[-1] == "release.a"
+    assert calls == ["acquire.a", "consumer", "release.a"]
     assert any("c release" in note for note in raised.value.__notes__)
 
 
@@ -405,3 +405,140 @@ def test_composite_run_directly_needs_a_step_scope() -> None:
         platform.acquire.run(TaskInputs.empty())
     with pytest.raises(StepScopeUnavailableError):
         platform.release.run(TaskInputs.empty())
+
+
+def test_compile_rejects_a_member_shared_by_two_composites() -> None:
+    calls: list[str] = []
+    a = _member("a", calls)
+    first = compose("Acquire first", (a, _member("b", calls)))
+    second = compose("Acquire second", (a, _member("c", calls)))
+    workflow = Workflow(workflow_id="wf")
+    workflow.add(_consumer(calls), requires=(first, second))
+
+    with pytest.raises(CompositeMemberRequiredError, match="'a'"):
+        workflow.compile()
+    assert calls == []
+
+
+def test_compile_rejects_a_member_shared_through_a_nested_composite() -> None:
+    calls: list[str] = []
+    a = _member("a", calls)
+    inner = compose("Acquire inner", (a,))
+    first = compose("Acquire first", (inner,))
+    second = compose("Acquire second", (a, _member("c", calls)))
+    workflow = Workflow(workflow_id="wf")
+    workflow.add(_consumer(calls), requires=(first, second))
+
+    with pytest.raises(CompositeMemberRequiredError, match="'a'"):
+        workflow.compile()
+
+
+def test_compose_rejects_a_member_requiring_a_later_member() -> None:
+    calls: list[str] = []
+    c = _member("c", calls)
+    b = task_resource(
+        "b", lambda inputs: inputs.resource(c), lambda _i, _v: None, requires=(c,)
+    )
+
+    with pytest.raises(ValueError, match=r"'b' requires 'c'"):
+        compose("Acquire platform", (_member("a", calls), b, c))
+
+
+def test_resumed_unwind_releases_a_member_whose_earlier_unwind_failed(
+    tmp_path: Path,
+) -> None:
+    calls: list[str] = []
+    failures = [1]
+
+    def flaky_release(_inputs: TaskInputs, _value: object) -> None:
+        calls.append("release.a")
+        if failures[0]:
+            failures[0] -= 1
+            raise RuntimeError("release a broke")
+
+    def failing_acquire(_inputs: TaskInputs) -> object:
+        calls.append("acquire.b")
+        raise RuntimeError("b")  # a fresh error each run: notes stay per run
+
+    a = task_resource("a", lambda _i: "A", flaky_release, idempotent=True)
+    b = task_resource("b", failing_acquire, lambda _i, _v: None, idempotent=True)
+    platform = compose("Acquire platform", (a, b))
+    journal = JournalConfig(tmp_path / "journal.jsonl")
+    with pytest.raises(RuntimeError):
+        _run(platform, _consumer(calls), journal=journal)
+    calls.clear()
+
+    with pytest.raises(RuntimeError) as raised:
+        _run(platform, _consumer(calls), journal=journal, resume=True)
+
+    assert raised.value.args == ("b",)
+    assert calls == ["acquire.b", "release.a"]
+    assert not getattr(raised.value, "__notes__", [])
+
+
+def test_a_failing_journal_still_releases_every_member(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sonata_engine.journal import Journal
+
+    original = Journal.record_started
+
+    def failing(self: Journal, task_id: str, attempt: int) -> None:
+        if "release" in task_id:
+            raise OSError("disk full")
+        original(self, task_id, attempt)
+
+    monkeypatch.setattr(Journal, "record_started", failing)
+    calls: list[str] = []
+    platform = compose("Acquire platform", (_member("a", calls), _member("b", calls)))
+
+    with pytest.raises(RuntimeError, match="disk full"):
+        _run(platform, _consumer(calls), journal=JournalConfig(tmp_path / "j.jsonl"))
+
+    assert calls[-2:] == ["release.b", "release.a"]
+
+
+def test_a_failing_journal_still_runs_the_unwind(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sonata_engine.journal import Journal
+
+    original = Journal.record_started
+
+    def failing(self: Journal, task_id: str, attempt: int) -> None:
+        if "release" in task_id:
+            raise OSError("disk full")
+        original(self, task_id, attempt)
+
+    monkeypatch.setattr(Journal, "record_started", failing)
+    calls: list[str] = []
+    error = RuntimeError("b")
+    platform = compose(
+        "Acquire platform", (_member("a", calls), _failing_member("b", error, calls))
+    )
+
+    with pytest.raises(RuntimeError) as raised:
+        _run(platform, _consumer(calls), journal=JournalConfig(tmp_path / "j.jsonl"))
+
+    assert raised.value is error
+    assert calls == ["acquire.a", "acquire.b", "release.a"]
+    assert any("disk full" in note for note in error.__notes__)
+
+
+def test_unwind_interrupt_note_is_not_blank() -> None:
+    def interrupted(_inputs: TaskInputs, _value: object) -> None:
+        raise KeyboardInterrupt
+
+    error = RuntimeError("b")
+    platform = compose(
+        "Acquire platform",
+        (
+            task_resource("a", lambda _i: "A", interrupted),
+            _failing_member("b", error, []),
+        ),
+    )
+
+    with pytest.raises(RuntimeError):
+        _run(platform, _consumer([]))
+
+    assert error.__notes__ == ["Cleanup error: KeyboardInterrupt()"]
