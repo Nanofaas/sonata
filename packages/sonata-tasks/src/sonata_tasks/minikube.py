@@ -5,12 +5,12 @@ from __future__ import annotations
 import json
 import platform
 import shutil
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, override
+from typing import Any
 
-from sonata_engine import Resource, Task, TaskInputs, TaskOutcome
+from sonata_engine import Resource, TaskInputs
+from sonata_tasks._resource_tasks import resource_of
 from sonata_tasks.command import CommandTask
 from sonata_tasks.execution.ports import CommandTaskExecutor
 
@@ -22,31 +22,6 @@ class MinikubeTarget:
     profile: str
     context: str
     nodes: tuple[str, ...]
-
-
-class _Acquire(Task[MinikubeTarget]):
-    def __init__(
-        self, title: str, body: Callable[[TaskInputs], MinikubeTarget]
-    ) -> None:
-        self.title = title
-        self._body = body
-
-    @override
-    def run(self, inputs: TaskInputs) -> TaskOutcome[MinikubeTarget]:
-        return TaskOutcome(value=self._body(inputs))
-
-
-class _Release(Task[None]):
-    def __init__(
-        self, title: str, body: Callable[[TaskInputs, MinikubeTarget], object]
-    ) -> None:
-        self.title = title
-        self._body = body
-
-    @override
-    def run(self, inputs: TaskInputs) -> TaskOutcome[None]:
-        _ = self._body(inputs, inputs.upstream())
-        return TaskOutcome(value=None)
 
 
 def minikube_target_resource(
@@ -180,8 +155,8 @@ def minikube_target_resource(
         if kubeconfig is not None:
             kubeconfig.unlink(missing_ok=True)
 
-    return Resource(
-        title="Preflight selected host Minikube",
-        acquire=_Acquire("Preflight selected host Minikube", acquire),
-        release=_Release("Release selected host Minikube", release),
+    return resource_of(
+        "Preflight selected host Minikube",
+        acquire,
+        release,
     )

@@ -7,11 +7,11 @@ import hashlib
 import re
 import subprocess
 import tempfile
-from collections.abc import Callable
 from pathlib import Path, PurePosixPath
-from typing import cast, override
+from typing import cast
 
-from sonata_engine import Resource, Task, TaskInputs, TaskOutcome
+from sonata_engine import Resource, TaskInputs
+from sonata_tasks._resource_tasks import resource_of
 from sonata_tasks.compensation import best_effort
 from sonata_tasks.transfer import RemoteProvider
 
@@ -224,27 +224,6 @@ def stage_source_archive[RequestT](
         raise
 
 
-class _Acquire(Task[str]):
-    def __init__(self, title: str, body: Callable[[TaskInputs], str]) -> None:
-        self.title = title
-        self._body = body
-
-    @override
-    def run(self, inputs: TaskInputs) -> TaskOutcome[str]:
-        return TaskOutcome(value=self._body(inputs))
-
-
-class _Release(Task[None]):
-    def __init__(self, title: str, body: Callable[[TaskInputs, str], object]) -> None:
-        self.title = title
-        self._body = body
-
-    @override
-    def run(self, inputs: TaskInputs) -> TaskOutcome[None]:
-        _ = self._body(inputs, inputs.upstream())
-        return TaskOutcome(value=None)
-
-
 def source_archive_resource[RequestT](
     *,
     repo_root: Path | None = None,
@@ -332,9 +311,9 @@ def source_archive_resource[RequestT](
             provider.exec_argv(request, argv=("rm", "-rf", remote_source_dir))
 
     title = f"Acquire source archive at {remote_source_dir}"
-    return Resource(
-        title=title,
-        acquire=_Acquire(title, acquire),
-        release=_Release(f"Release source archive at {remote_source_dir}", release),
+    return resource_of(
+        title,
+        acquire,
+        release,
         always_release=archive is not None,
     )

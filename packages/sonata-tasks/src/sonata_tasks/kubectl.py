@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, override
 
 from sonata_engine import Resource, Task, TaskInputs, TaskOutcome
+from sonata_tasks._resource_tasks import resource_of
 from sonata_tasks.command import CommandTask
 from sonata_tasks.execution.models import CommandOptions, CommandTaskSpec, TaskResult
 from sonata_tasks.execution.ports import CommandTaskExecutor
@@ -152,27 +153,6 @@ def _context_args(context: KubernetesContext, inputs: TaskInputs) -> tuple[str, 
     return ("--context", selected) if selected else ()
 
 
-class _Acquire(Task[str]):
-    def __init__(self, title: str, body: Callable[[TaskInputs], str]) -> None:
-        self.title = title
-        self._body = body
-
-    @override
-    def run(self, inputs: TaskInputs) -> TaskOutcome[str]:
-        return TaskOutcome(value=self._body(inputs))
-
-
-class _Release(Task[None]):
-    def __init__(self, title: str, body: Callable[[TaskInputs, str], object]) -> None:
-        self.title = title
-        self._body = body
-
-    @override
-    def run(self, inputs: TaskInputs) -> TaskOutcome[None]:
-        _ = self._body(inputs, inputs.upstream())
-        return TaskOutcome(value=None)
-
-
 def owned_namespace_resource(
     namespace: str,
     *,
@@ -233,10 +213,10 @@ def owned_namespace_resource(
             ),
         )
 
-    return Resource(
-        title=f"Own namespace {namespace}",
-        acquire=_Acquire(f"Own namespace {namespace}", acquire),
-        release=_Release(f"Release namespace {namespace}", release),
+    return resource_of(
+        f"Own namespace {namespace}",
+        acquire,
+        release,
         requires=requires,
     )
 
@@ -315,13 +295,10 @@ def kubectl_port_forward_resource(
             stop()
             raise
 
-    return Resource(
-        title=f"Forward {resource} from namespace {namespace}",
-        acquire=_Acquire(f"Forward {resource} from namespace {namespace}", acquire),
-        release=_Release(
-            f"Release {resource} from namespace {namespace}",
-            lambda _inputs, _value: stop(),
-        ),
+    return resource_of(
+        f"Forward {resource} from namespace {namespace}",
+        acquire,
+        lambda _inputs, _value: stop(),
         requires=requires,
         always_release=True,
     )

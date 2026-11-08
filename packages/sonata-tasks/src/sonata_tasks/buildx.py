@@ -5,10 +5,11 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Sequence
 from dataclasses import replace
-from typing import Any, override
+from typing import Any
 from uuid import uuid4
 
-from sonata_engine import Resource, Task, TaskInputs, TaskOutcome
+from sonata_engine import Resource, TaskInputs
+from sonata_tasks._resource_tasks import resource_of
 from sonata_tasks.command import CommandTask
 from sonata_tasks.compensation import best_effort
 from sonata_tasks.execution.models import CommandOptions, TaskResult
@@ -70,27 +71,6 @@ def _matches_owner(stdout: str, name: str, node: str) -> bool:
         and drivers == ["docker-container"]
         and re.search(r"^[ \t]*Nodes:[ \t]*$", stdout, re.MULTILINE) is not None
     )
-
-
-class _Acquire(Task[str]):
-    def __init__(self, title: str, body: Callable[[TaskInputs], str]) -> None:
-        self.title = title
-        self._body = body
-
-    @override
-    def run(self, inputs: TaskInputs) -> TaskOutcome[str]:
-        return TaskOutcome(value=self._body(inputs))
-
-
-class _Release(Task[None]):
-    def __init__(self, title: str, body: Callable[[TaskInputs, str], object]) -> None:
-        self.title = title
-        self._body = body
-
-    @override
-    def run(self, inputs: TaskInputs) -> TaskOutcome[None]:
-        _ = self._body(inputs, inputs.upstream())
-        return TaskOutcome(value=None)
 
 
 def buildx_builder_resource(
@@ -265,10 +245,10 @@ def buildx_builder_resource(
             remove(inputs)
 
     title = f"Acquire {name} buildx builder"
-    return Resource(
-        title=title,
-        acquire=_Acquire(title, acquire),
-        release=_Release(f"Release {name} buildx builder", release),
+    return resource_of(
+        title,
+        acquire,
+        release,
         requires=requires,
         always_release=True,
     )
