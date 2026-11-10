@@ -542,3 +542,39 @@ def test_unwind_interrupt_note_is_not_blank() -> None:
         _run(platform, _consumer([]))
 
     assert error.__notes__ == ["Cleanup error: KeyboardInterrupt()"]
+
+
+@pytest.mark.parametrize("nested", [False, True])
+@pytest.mark.parametrize("release_fails", [False, True])
+def test_member_is_released_when_record_passed_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, nested: bool, release_fails: bool
+) -> None:
+    from sonata_engine.journal import Journal
+
+    calls: list[str] = []
+    original = Journal.record_passed
+    error = OSError("terminal journal full")
+
+    def failing(self: Journal, task_id: str, attempt: int, evidence=None) -> None:
+        if task_id.endswith("/acquire-b"):
+            raise error
+        original(self, task_id, attempt, evidence)
+
+    def release(_inputs: TaskInputs, value: object) -> None:
+        assert value is None
+        calls.append("release.b")
+        if release_fails:
+            raise RuntimeError("release b failed")
+
+    monkeypatch.setattr(Journal, "record_passed", failing)
+    b = task_resource("b", lambda _inputs: None, release)
+    inner = compose("Acquire inner", (_member("a", calls), b))
+    platform = compose("Acquire outer", (inner,)) if nested else inner
+
+    with pytest.raises(OSError, match="terminal journal full") as raised:
+        _run(platform, _consumer(calls), journal=JournalConfig(tmp_path / "j.jsonl"))
+
+    assert raised.value is error
+    assert calls == ["acquire.a", "release.b", "release.a"]
+    if release_fails:
+        assert any("release b failed" in note for note in error.__notes__)
