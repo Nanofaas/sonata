@@ -77,7 +77,7 @@ class _Stack:
             .run(inputs)
             .value
         )
-        assert value is not None
+        assert value is not None  # nosec B101 - guaranteed task result
         return value
 
     @contextmanager
