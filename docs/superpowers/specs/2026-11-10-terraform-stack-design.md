@@ -1,12 +1,12 @@
 # Terraform/OpenTofu stacks in Sonata, consumed by Nanolab
 
-Status: proposed for approval. This extends the ongoing review/remediation; it is not yet implemented.
+Status: approved by user (“procedi”). This extends the ongoing review/remediation; it is not yet implemented.
 
 ## Intent and scope
 
 Provide an engineered, reusable way to create a group of VMs through Terraform/OpenTofu in `sonata-tasks`, and use it in Nanolab's one-shot experiments. Sonata owns CLI execution and stack lifecycle; Nanolab supplies the experiment topology and consumes connection facts. The first real integration uses `Nanofaas/terraform-provider-multipass` against `michele@149.132.179.35`.
 
-User requirements: reusable Sonata functionality, actual Nanolab integration, tests, native implementation. The details below are implementation proposals, not previously approved choices.
+User requirements: reusable Sonata functionality, actual Nanolab integration, tests, native implementation. The user approved the design below for implementation.
 
 ## Approaches
 
