@@ -165,7 +165,14 @@ class _StepScope:
     # Set on a cleanup scope: journal failures are collected here, not raised.
     journal_errors: list[BaseException] | None = None
 
-    def run_step(self, step: Task[Any], slug: str, upstream: Any) -> TaskExecution:  # noqa: ANN401
+    def run_step(
+        self,
+        step: Task[Any],
+        slug: str,
+        upstream: Any,  # noqa: ANN401
+        *,
+        on_outcome: Callable[[TaskOutcome[Any]], None] | None = None,
+    ) -> TaskExecution:
         if not slug or "/" in slug:
             raise ValueError(f"step slug {slug!r} must be non-empty and contain no '/'")
         step_id = f"{self.prefix}/{slug}"
@@ -186,6 +193,7 @@ class _StepScope:
             make_inputs=make_inputs,
             jrnl=self.jrnl,
             resume=self.resume,
+            on_outcome=on_outcome,
             journal_errors=self.journal_errors,
         )
 

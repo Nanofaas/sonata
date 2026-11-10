@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
     from sonata_engine.core.compiled import TaskExecution
     from sonata_engine.core.inputs import TaskInputs
+    from sonata_engine.core.outcome import TaskOutcome
     from sonata_engine.core.task import Task
 
 
@@ -24,7 +26,14 @@ class _StepScopeProtocol(Protocol):
     against, so there is nothing to gain from making this Protocol public.
     """
 
-    def run_step(self, step: Task[Any], slug: str, upstream: Any) -> TaskExecution:  # noqa: ANN401
+    def run_step(
+        self,
+        step: Task[Any],
+        slug: str,
+        upstream: Any,  # noqa: ANN401
+        *,
+        on_outcome: Callable[[TaskOutcome[Any]], None] | None = None,
+    ) -> TaskExecution:
         """Run one step beneath this scope and return how it went."""
         ...
 

@@ -418,3 +418,45 @@ declared in `[tool.coverage.report]`.
 
 The v2 design and the migration sequence it came from are documented in
 [`docs/plans/2026-07-24-release-on-workflow-engine.md`](https://github.com/Nanofaas/sonata/blob/main/docs/plans/2026-07-24-release-on-workflow-engine.md).
+
+Resume compatibility: task-catalog wrappers for compensated, Compose and Helm
+resources now include their child tasks in the workflow fingerprint. Journals
+created before this correction for these resources require a new run, or must
+be completed with the previous version; do not edit fingerprints to force resume.
+
+Release candidate 0.7.1 (not published): composite members are owned before
+terminal journal writes, so a journal failure cannot skip their cleanup.
+Compensated, Compose and Helm acquire wrappers propagate child fingerprints;
+changed deployment settings reject resume. Both distributions must be released
+together. See the resume compatibility note above before upgrading active runs.
+
+### Terraform / OpenTofu stacks
+
+`sonata_tasks.terraform` provides `TerraformTask` (`init`, `plan`, `apply`,
+`output`, `destroy`) and `terraform_stack_resource`. Prepare a private directory
+with the module and pinned provider lock file, list its immutable input files in
+`TerraformSpec`, and explicitly select the non-sensitive outputs consumers need.
+The default executable is `tofu`; set `binary="terraform"` to use Terraform.
+`apply` consumes the saved plan. CLI diagnostics and plans remain private and
+are not returned as journal values.
+
+The Resource owns only default-workspace, local state. It rejects unrelated
+state, records ownership before mutation, and compensates confirmed partial
+failures. Timeouts and incomplete cleanup retain state for explicit recovery.
+A previously acquired stack is validated on resume; drift requiring changes
+fails instead of replacing its resources. A `retain` callback can protect raw
+experiment evidence; once retained, automatic teardown stays blocked across
+process restart. Inspect `.sonata-terraform/owner.json` and private diagnostics,
+recover evidence, then use explicit operations for a reviewed recovery. Never
+remove an owner record to force adoption. The executor must not publish raw CLI
+output: output JSON can include sensitive values.
+
+Parallelism defaults to one because Multipass 1.17 on the target ARM64 host has
+known concurrent launch failures; other stacks may explicitly increase it.
+
+Terraform variable environment inputs must be explicit in `TerraformSpec.env`;
+undeclared inherited `TF_VAR_*` and `TF_CLI_CONFIG_FILE` are rejected. An explicit
+CLI configuration path must be absolute and its bytes are hashed and checked with
+the module inputs. Without one, the CLI uses an empty configuration (`/dev/null`),
+so user-home provider overrides cannot silently alter a frozen stack. Provider
+credentials can still use their ordinary environment variables.

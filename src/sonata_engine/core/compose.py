@@ -139,14 +139,25 @@ class _AcquireMembers(Task[Members]):
         upstream: Any = _NO_UPSTREAM
         try:
             for member in self.members:
+
+                def acquired_value(
+                    outcome: TaskOutcome[Any], current: Resource[Any] = member
+                ) -> None:
+                    # Own the value before reporting or journalling can fail.
+                    values[current.title] = outcome.value
+                    acquired.append(current)
+
                 execution = scope.rebased(
                     _with_members(inputs, tuple(acquired), values)
-                ).run_step(member.acquire, f"acquire-{slugify(member.title)}", upstream)
-                upstream = (
-                    execution.outcome.value if execution.outcome is not None else None
+                ).run_step(
+                    member.acquire,
+                    f"acquire-{slugify(member.title)}",
+                    upstream,
+                    on_outcome=acquired_value,
                 )
-                values[member.title] = upstream
-                acquired.append(member)
+                if execution.outcome is None:
+                    acquired_value(TaskOutcome())
+                upstream = values[member.title]
         except BaseException as exc:
             for error in _release_members(scope, inputs, tuple(acquired), values):
                 exc.add_note(f"Cleanup error: {error!r}")

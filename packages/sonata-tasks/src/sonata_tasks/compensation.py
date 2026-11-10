@@ -30,6 +30,16 @@ class _CompensatedAcquire[T](Task[T]):
         self._compensate = compensate
 
     @override
+    def _fingerprint_payload(self) -> object:
+        return tuple(
+            (
+                f"{type(task).__module__}.{type(task).__qualname__}",
+                task._fingerprint_payload(),
+            )
+            for task in (self._acquire, self._compensate)
+        )
+
+    @override
     def run(self, inputs: TaskInputs) -> TaskOutcome[T]:
         try:
             return self._acquire.run(inputs)
