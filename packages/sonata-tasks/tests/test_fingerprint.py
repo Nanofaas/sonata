@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import override
 
 import pytest
 
@@ -101,9 +102,11 @@ def test_wrapped_resource_fingerprint_rejects_changed_resume(tmp_path, change):
             self.key = key
 
         @property
+        @override
         def reuse_key(self):
             return self.key
 
+        @override
         def run(self, inputs):
             return TaskOutcome()
 
