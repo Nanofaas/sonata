@@ -144,6 +144,14 @@ class _AcquireComposeProject[T: DockerComposeProject](Task[T]):
         self._project = project
 
     @override
+    def _fingerprint_payload(self) -> object:
+        task = self._deploy
+        return (
+            f"{type(task).__module__}.{type(task).__qualname__}",
+            task._fingerprint_payload(),
+        )
+
+    @override
     def run(self, inputs: TaskInputs) -> TaskOutcome[T]:
         _ = self._deploy.run(inputs)
         return TaskOutcome(value=self._project)

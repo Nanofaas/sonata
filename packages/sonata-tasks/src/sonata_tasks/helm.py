@@ -103,6 +103,14 @@ class _AcquireHelmRelease(Task[HelmReleaseSpec]):
         self._install = install
 
     @override
+    def _fingerprint_payload(self) -> object:
+        task = self._install
+        return (
+            f"{type(task).__module__}.{type(task).__qualname__}",
+            task._fingerprint_payload(),
+        )
+
+    @override
     def run(self, inputs: TaskInputs) -> TaskOutcome[HelmReleaseSpec]:
         _ = self._install.run(inputs)
         return TaskOutcome(value=self._spec)

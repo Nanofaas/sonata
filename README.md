@@ -418,3 +418,8 @@ declared in `[tool.coverage.report]`.
 
 The v2 design and the migration sequence it came from are documented in
 [`docs/plans/2026-07-24-release-on-workflow-engine.md`](https://github.com/Nanofaas/sonata/blob/main/docs/plans/2026-07-24-release-on-workflow-engine.md).
+
+Resume compatibility: task-catalog wrappers for compensated, Compose and Helm
+resources now include their child tasks in the workflow fingerprint. Journals
+created before this correction for these resources require a new run, or must
+be completed with the previous version; do not edit fingerprints to force resume.
