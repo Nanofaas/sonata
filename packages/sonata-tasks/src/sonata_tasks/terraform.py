@@ -6,14 +6,14 @@ import hashlib
 import json
 import math
 import os
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Literal, override
 from uuid import uuid4
 
-from sonata_engine import Task, TaskInputs, TaskOutcome
+from sonata_engine import Resource, Task, TaskInputs, TaskOutcome
 from sonata_tasks.core.fingerprint import fingerprint_digest
 from sonata_tasks.execution.models import CommandOptions, CommandTaskSpec
 from sonata_tasks.execution.ports import CommandTaskExecutor
@@ -38,6 +38,7 @@ class TerraformSpec:
     binary: str = "tofu"
     timeout_seconds: float = 600
     lock_timeout_seconds: int = 60
+    parallelism: int = 1
     var_files: tuple[str, ...] = ()
     env: Mapping[str, str] = field(default_factory=dict, repr=False)
     digest: str = field(init=False)
@@ -55,6 +56,8 @@ class TerraformSpec:
             raise ValueError("Terraform timeout must be finite and positive")
         if type(self.lock_timeout_seconds) is not int or self.lock_timeout_seconds <= 0:
             raise ValueError("Terraform lock timeout must be a positive integer")
+        if type(self.parallelism) is not int or self.parallelism <= 0:
+            raise ValueError("Terraform parallelism must be a positive integer")
         for name in ("inputs", "outputs", "var_files"):
             values = tuple(getattr(self, name))
             if any(not isinstance(v, str) or not v for v in values) or len(
@@ -191,19 +194,22 @@ class TerraformTask(Task[TerraformResult]):
     def _fingerprint_payload(self) -> object:
         return {
             "digest": fingerprint_digest(
-                (
-                    self.spec.owner,
-                    str(self.spec.directory),
-                    self.spec.digest,
-                    self.spec.binary,
-                    self.spec.outputs,
-                    self.spec.var_files,
-                    dict(self.spec.env),
-                    self.spec.timeout_seconds,
-                    self.spec.lock_timeout_seconds,
-                    self.action,
-                    self.executor.binding_key(self.role),
-                )
+                {
+                    "spec": (
+                        self.spec.owner,
+                        str(self.spec.directory),
+                        self.spec.digest,
+                        self.spec.binary,
+                        self.spec.outputs,
+                        self.spec.var_files,
+                        dict(self.spec.env),
+                        self.spec.timeout_seconds,
+                        self.spec.lock_timeout_seconds,
+                        self.spec.parallelism,
+                        self.action,
+                        self.executor.binding_key(self.role),
+                    )
+                }
             )
         }
 
@@ -224,6 +230,7 @@ class TerraformTask(Task[TerraformResult]):
                 args += ["-lockfile=readonly"]
             else:
                 args += [f"-lock-timeout={self.spec.lock_timeout_seconds}s"]
+                args += [f"-parallelism={self.spec.parallelism}"]
             if self.action == "plan":
                 args += ["-detailed-exitcode", f"-out={plan}"]
             elif self.action == "apply":
@@ -289,3 +296,24 @@ class TerraformTask(Task[TerraformResult]):
         return TaskOutcome(
             value=TerraformResult(changed=result.return_code == 2, outputs=selected)
         )
+
+
+def terraform_stack_resource(
+    spec: TerraformSpec,
+    *,
+    executor: CommandTaskExecutor,
+    role: str = "host",
+    requires: tuple[Resource[Any], ...] = (),
+    retain: Callable[[], str | None] | None = None,
+) -> Resource[TerraformResult]:
+    """Own one default-workspace local-state stack, retaining uncertain failures.
+
+    ``retain`` supplies a reason to preserve the stack on release. Once
+    retained or uncertain, automatic operations refuse destructive recovery.
+    Inspect its private owner record and state before an explicit recovery.
+    """
+    from sonata_tasks._terraform_stack import owned_stack
+
+    return owned_stack(
+        spec, executor=executor, role=role, requires=requires, retain=retain
+    )

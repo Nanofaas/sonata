@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from typing import override
 
 import pytest
 
 from sonata_engine import TaskInputs
 from sonata_tasks.execution.models import CommandTaskSpec, TaskResult
-from sonata_tasks.terraform import TerraformSpec, TerraformTask
+from sonata_tasks.terraform import (
+    TerraformSpec,
+    TerraformTask,
+    terraform_stack_resource,
+)
 
 
 @dataclass
@@ -23,6 +28,20 @@ class Executor:
         code, stdout = self.responses.pop(0) if self.responses else (0, "")
         if task.argv[1] == "plan" and code in (0, 2):
             (task.options.cwd / ".sonata-terraform" / "plan").write_bytes(b"plan")
+        if task.argv[1] == "apply":
+            (task.options.cwd / "terraform.tfstate").write_text(
+                json.dumps(
+                    {
+                        "version": 4,
+                        "lineage": "test-owned",
+                        "resources": [{"type": "terraform_data"}],
+                    }
+                )
+            )
+        if task.argv[1] == "destroy" and code == 0:
+            (task.options.cwd / "terraform.tfstate").write_text(
+                json.dumps({"version": 4, "lineage": "test-owned", "resources": []})
+            )
         return TaskResult(
             task_id="",
             status="passed" if code in task.options.expected_exit_codes else "failed",
@@ -45,6 +64,7 @@ def test_plan_exit_codes_and_saved_plan_application(module, binary, code, change
     result = (
         TerraformTask(spec, "plan", executor=executor).run(TaskInputs.empty()).value
     )
+    assert result is not None
     assert result.changed is changed
     TerraformTask(spec, "apply", executor=executor).run(TaskInputs.empty())
     assert executor.seen[0].argv[:3] == (binary, "plan", "-input=false")
@@ -82,6 +102,7 @@ def test_output_selects_only_declared_non_sensitive_values(module):
         .run(TaskInputs.empty())
         .value
     )
+    assert result is not None
     assert result.outputs == {"nodes": {"a": "10.0.0.2"}}
     assert "hunter2" not in repr(result)
 
@@ -150,3 +171,135 @@ def test_apply_without_saved_plan_cannot_mutate(module):
 def test_rejects_invalid_input_boundary(module, inputs):
     with pytest.raises(ValueError, match="Terraform"):
         TerraformSpec(module, owner="run-1", inputs=inputs)
+
+
+def stack_spec(module):
+    return TerraformSpec(module, owner="run-1", inputs=("main.tf",), outputs=("nodes",))
+
+
+OUTPUT = json.dumps(
+    {
+        "nodes": {
+            "sensitive": False,
+            "type": ["map", "string"],
+            "value": {"a": "10.0.0.2"},
+        }
+    }
+)
+
+
+def test_owned_stack_applies_and_releases_only_after_consumer(module):
+    executor = Executor([(0, ""), (2, ""), (0, ""), (0, OUTPUT), (0, "")])
+    resource = terraform_stack_resource(stack_spec(module), executor=executor)
+    result = resource.acquire.run(TaskInputs.empty()).value
+    assert result is not None and result.outputs["nodes"] == {"a": "10.0.0.2"}
+    assert [x.argv[1] for x in executor.seen] == ["init", "plan", "apply", "output"]
+    resource.release.run(TaskInputs.empty())
+    resource.release.run(TaskInputs.empty())
+    assert [x.argv[1] for x in executor.seen].count("destroy") == 1
+
+
+def test_foreign_state_never_triggers_cleanup(module):
+    (module / "terraform.tfstate").write_text('{"lineage":"foreign"}')
+    executor = Executor()
+    resource = terraform_stack_resource(stack_spec(module), executor=executor)
+    with pytest.raises(RuntimeError, match="foreign"):
+        resource.acquire.run(TaskInputs.empty())
+    assert executor.seen == []
+
+
+def test_partial_apply_compensates_and_keeps_primary_failure(module):
+    executor = Executor(
+        [(0, ""), (2, ""), (1, "original secret"), (1, "cleanup secret")]
+    )
+    resource = terraform_stack_resource(stack_spec(module), executor=executor)
+    with pytest.raises(RuntimeError, match="apply failed") as caught:
+        resource.acquire.run(TaskInputs.empty())
+    assert executor.seen[-1].argv[1] == "destroy"
+    assert "secret" not in str(caught.value)
+    assert any("destroy failed" in n for n in caught.value.__notes__)
+    assert (
+        json.loads((module / ".sonata-terraform" / "owner.json").read_text())["phase"]
+        == "uncertain"
+    )
+
+
+def test_retention_blocks_destroy_and_survives_resource_reconstruction(module):
+    executor = Executor([(0, ""), (2, ""), (0, ""), (0, OUTPUT)])
+    spec = stack_spec(module)
+    resource = terraform_stack_resource(
+        spec, executor=executor, retain=lambda: "archive failed"
+    )
+    resource.acquire.run(TaskInputs.empty())
+    with pytest.raises(RuntimeError, match="retained"):
+        resource.release.run(TaskInputs.empty())
+    reconstructed = terraform_stack_resource(spec, executor=executor)
+    with pytest.raises(RuntimeError, match="retained"):
+        reconstructed.release.run(TaskInputs.empty())
+    assert all(x.argv[1] != "destroy" for x in executor.seen)
+
+
+def test_resume_refreshes_outputs_without_apply_and_refuses_drift(module):
+    executor = Executor(
+        [(0, ""), (2, ""), (0, ""), (0, OUTPUT), (0, ""), (0, ""), (0, OUTPUT)]
+    )
+    resource = terraform_stack_resource(stack_spec(module), executor=executor)
+    resource.acquire.run(TaskInputs.empty())
+    resource.acquire.run(TaskInputs.empty())
+    assert [x.argv[1] for x in executor.seen].count("apply") == 1
+    executor.responses = [(0, ""), (2, "")]
+    with pytest.raises(RuntimeError, match="drift"):
+        resource.acquire.run(TaskInputs.empty())
+    assert [x.argv[1] for x in executor.seen].count("apply") == 1
+    assert all(x.argv[1] != "destroy" for x in executor.seen)
+
+
+@pytest.mark.parametrize(
+    "backend",
+    [
+        {"type": "s3", "config": {}},
+        {"type": "local", "config": {"path": "/foreign.tfstate"}},
+    ],
+)
+def test_custom_backend_is_refused_before_mutation(module, backend):
+    metadata = module / ".terraform"
+    metadata.mkdir()
+    (metadata / "terraform.tfstate").write_text(json.dumps({"backend": backend}))
+    executor = Executor()
+    with pytest.raises(RuntimeError, match="backend"):
+        terraform_stack_resource(stack_spec(module), executor=executor).acquire.run(
+            TaskInputs.empty()
+        )
+    assert executor.seen == []
+
+
+def test_interrupted_apply_keeps_uncertain_state_without_destroy(module):
+    class TimeoutExecutor(Executor):
+        @override
+        def run(self, task, *, dry_run=False):
+            if task.argv[1] == "apply":
+                self.seen.append(task)
+                raise TimeoutError("sensitive timeout detail")
+            return super().run(task, dry_run=dry_run)
+
+    executor = TimeoutExecutor([(0, ""), (2, "")])
+    resource = terraform_stack_resource(stack_spec(module), executor=executor)
+    with pytest.raises(RuntimeError, match="apply failed"):
+        resource.acquire.run(TaskInputs.empty())
+    with pytest.raises(RuntimeError, match="uncertain"):
+        resource.acquire.run(TaskInputs.empty())
+    assert all(x.argv[1] != "destroy" for x in executor.seen)
+
+
+def test_parallelism_is_explicit_for_multipass_launch_safety(module):
+    spec = TerraformSpec(module, owner="run-1", inputs=("main.tf",), parallelism=1)
+    executor = Executor([(2, ""), (0, "")])
+    TerraformTask(spec, "plan", executor=executor).run(TaskInputs.empty())
+    TerraformTask(spec, "apply", executor=executor).run(TaskInputs.empty())
+    assert "-parallelism=1" in executor.seen[-1].argv
+
+
+@pytest.mark.parametrize("value", [0, -1, True])
+def test_invalid_parallelism_is_refused(module, value):
+    with pytest.raises(ValueError, match="parallelism"):
+        TerraformSpec(module, owner="run-1", inputs=("main.tf",), parallelism=value)
