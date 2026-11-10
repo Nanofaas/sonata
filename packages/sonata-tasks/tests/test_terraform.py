@@ -303,3 +303,156 @@ def test_parallelism_is_explicit_for_multipass_launch_safety(module):
 def test_invalid_parallelism_is_refused(module, value):
     with pytest.raises(ValueError, match="parallelism"):
         TerraformSpec(module, owner="run-1", inputs=("main.tf",), parallelism=value)
+
+
+def test_failed_recovery_record_does_not_replace_apply_error(module, monkeypatch):
+    from sonata_tasks import _terraform_stack
+
+    original = _terraform_stack._write
+
+    def failing_write(path, record):
+        if record.get("phase") == "uncertain":
+            raise OSError("disk full")
+        original(path, record)
+
+    monkeypatch.setattr(_terraform_stack, "_write", failing_write)
+    executor = Executor([(0, ""), (2, ""), (1, "apply error"), (1, "destroy error")])
+    with pytest.raises(RuntimeError, match="apply failed") as caught:
+        terraform_stack_resource(stack_spec(module), executor=executor).acquire.run(
+            TaskInputs.empty()
+        )
+    assert any("disk full" in note for note in caught.value.__notes__)
+
+
+def test_failed_apply_never_claims_no_untracked_resources_after_cleanup(module):
+    executor = Executor([(0, ""), (2, ""), (1, "provider failure"), (0, "")])
+    resource = terraform_stack_resource(stack_spec(module), executor=executor)
+    with pytest.raises(RuntimeError, match="apply failed"):
+        resource.acquire.run(TaskInputs.empty())
+    assert json.loads((module / "terraform.tfstate").read_text())["resources"] == []
+    with pytest.raises(RuntimeError, match="uncertain"):
+        resource.acquire.run(TaskInputs.empty())
+
+
+@pytest.mark.parametrize("key", ["TF_VAR_count", "TF_CLI_CONFIG_FILE"])
+def test_undeclared_inherited_configuration_cannot_change_stack(
+    module, monkeypatch, key
+):
+    spec = stack_spec(module)
+    monkeypatch.setenv(key, "unexpected")
+    executor = Executor()
+    with pytest.raises(ValueError, match="override"):
+        TerraformTask(spec, "plan", executor=executor).run(TaskInputs.empty())
+    assert not executor.seen
+
+
+def test_explicit_cli_config_bytes_are_frozen(module):
+    config = module / "provider.tfrc"
+    config.write_text("# original configuration")
+    spec = TerraformSpec(
+        module,
+        owner="test",
+        inputs=("main.tf",),
+        env={"TF_CLI_CONFIG_FILE": str(config)},
+    )
+    before = TerraformTask(spec, "plan", executor=Executor())._fingerprint_payload()
+    config.write_text("provider_installation { dev_overrides {} }")
+    replacement = TerraformSpec(
+        module,
+        owner="test",
+        inputs=("main.tf",),
+        env={"TF_CLI_CONFIG_FILE": str(config)},
+    )
+    assert (
+        TerraformTask(replacement, "plan", executor=Executor())._fingerprint_payload()
+        != before
+    )
+    with pytest.raises(ValueError, match="changed"):
+        TerraformTask(spec, "plan", executor=Executor()).run(TaskInputs.empty())
+
+
+def test_default_cli_config_is_explicit_and_ignores_home_configuration(module):
+    import os
+
+    executor = Executor()
+    TerraformTask(stack_spec(module), "init", executor=executor).run(TaskInputs.empty())
+    assert executor.seen[0].options.env["TF_CLI_CONFIG_FILE"] == os.devnull
+
+
+def test_failed_uncertain_write_after_compensation_cannot_allow_reapply(
+    module, monkeypatch
+):
+    from sonata_tasks import _terraform_stack
+
+    original = _terraform_stack._write
+
+    def failing_write(path, record):
+        if record.get("phase") == "uncertain":
+            raise OSError("disk full")
+        original(path, record)
+
+    monkeypatch.setattr(_terraform_stack, "_write", failing_write)
+    executor = Executor([(0, ""), (2, ""), (1, "apply failure"), (0, "")])
+    resource = terraform_stack_resource(stack_spec(module), executor=executor)
+    with pytest.raises(RuntimeError, match="apply failed"):
+        resource.acquire.run(TaskInputs.empty())
+    commands = len(executor.seen)
+    with pytest.raises(RuntimeError, match="recovery"):
+        resource.acquire.run(TaskInputs.empty())
+    assert len(executor.seen) == commands
+
+
+def test_retention_callback_failure_is_durable(module):
+    executor = Executor([(0, ""), (2, ""), (0, ""), (0, OUTPUT)])
+
+    def broken_guard():
+        raise OSError("receipt unavailable")
+
+    spec = stack_spec(module)
+    resource = terraform_stack_resource(spec, executor=executor, retain=broken_guard)
+    resource.acquire.run(TaskInputs.empty())
+    with pytest.raises(OSError, match="receipt unavailable"):
+        resource.release.run(TaskInputs.empty())
+    resumed = terraform_stack_resource(spec, executor=executor, retain=lambda: None)
+    with pytest.raises(RuntimeError, match="recovery"):
+        resumed.release.run(TaskInputs.empty())
+    assert all(task.argv[1] != "destroy" for task in executor.seen)
+
+
+def test_failed_retention_record_cannot_allow_destroy_on_restart(module, monkeypatch):
+    from sonata_tasks import _terraform_stack
+
+    original = _terraform_stack._write
+
+    def failing_write(path, record):
+        if record.get("phase") == "retained":
+            raise OSError("disk full")
+        original(path, record)
+
+    executor = Executor([(0, ""), (2, ""), (0, ""), (0, OUTPUT)])
+    spec = stack_spec(module)
+    resource = terraform_stack_resource(
+        spec, executor=executor, retain=lambda: "archive missing"
+    )
+    resource.acquire.run(TaskInputs.empty())
+    monkeypatch.setattr(_terraform_stack, "_write", failing_write)
+    with pytest.raises(OSError, match="disk full"):
+        resource.release.run(TaskInputs.empty())
+    with pytest.raises(RuntimeError, match="recovery"):
+        terraform_stack_resource(spec, executor=executor).release.run(
+            TaskInputs.empty()
+        )
+    assert all(task.argv[1] != "destroy" for task in executor.seen)
+
+
+def test_active_stack_cannot_drop_required_retention_guard(module):
+    executor = Executor([(0, ""), (2, ""), (0, ""), (0, OUTPUT)])
+    spec = stack_spec(module)
+    terraform_stack_resource(spec, executor=executor, retain=lambda: None).acquire.run(
+        TaskInputs.empty()
+    )
+    with pytest.raises(RuntimeError, match="retained"):
+        terraform_stack_resource(spec, executor=executor).release.run(
+            TaskInputs.empty()
+        )
+    assert all(task.argv[1] != "destroy" for task in executor.seen)

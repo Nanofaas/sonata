@@ -12,6 +12,7 @@ from typing import Any, override
 from uuid import uuid4
 
 from sonata_engine import Resource, Task, TaskInputs, TaskOutcome
+from sonata_tasks.compensation import best_effort
 from sonata_tasks.execution.ports import CommandTaskExecutor
 from sonata_tasks.terraform import (
     TerraformAction,
@@ -132,6 +133,10 @@ class _Stack:
             raise RuntimeError(
                 "Terraform ownership/configuration changed; refusing foreign state"
             )
+        if record.get("requires_retention") and self.retain is None:
+            raise RuntimeError(
+                "Terraform stack retained: original guard required for recovery"
+            )
         state = self.state()
         if record.get("lineage") and (
             state is None or state.get("lineage") != record["lineage"]
@@ -141,7 +146,14 @@ class _Stack:
             )
         return record
 
-    def destroy(self, path: Path, record: dict[str, Any], inputs: TaskInputs) -> None:
+    def destroy(
+        self,
+        path: Path,
+        record: dict[str, Any],
+        inputs: TaskInputs,
+        *,
+        compensating: bool = False,
+    ) -> None:
         record["phase"] = "destroying"
         _write(path, record)
         try:
@@ -151,11 +163,13 @@ class _Stack:
                 raise RuntimeError(
                     "Terraform destroy left unconfirmed state; recovery required"
                 )
-        except BaseException:
+        except BaseException as error:
             record["phase"] = "uncertain"
-            _write(path, record)
+            best_effort(
+                error, lambda: _write(path, record), what="recording uncertain teardown"
+            )
             raise
-        record["phase"] = "destroyed"
+        record["phase"] = "uncertain" if compensating else "destroyed"
         _write(path, record)
 
     def acquire(self, inputs: TaskInputs) -> TerraformResult:
@@ -174,6 +188,7 @@ class _Stack:
                     "identity": self.identity,
                     "phase": "prepared",
                     "lineage": None,
+                    "requires_retention": self.retain is not None,
                 }
                 _write(path, record)
             phase = record.get("phase")
@@ -214,14 +229,23 @@ class _Stack:
                                 "retain for recovery"
                             )
                         record["lineage"] = state.get("lineage")
-                        self.destroy(path, record, inputs)
+                        # Never authorize retry after potentially unrecorded creation.
+                        self.destroy(path, record, inputs, compensating=True)
                     except BaseException as cleanup:
                         record["phase"] = "uncertain"
-                        _write(path, record)
+                        best_effort(
+                            error,
+                            lambda: _write(path, record),
+                            what="recording failed compensation",
+                        )
                         error.add_note(f"Terraform compensation failed: {cleanup}")
                 else:
                     record["phase"] = "uncertain"
-                    _write(path, record)
+                    best_effort(
+                        error,
+                        lambda: _write(path, record),
+                        what="recording uncertain apply",
+                    )
                 raise
 
     def release(self, inputs: TaskInputs) -> None:
@@ -231,6 +255,9 @@ class _Stack:
                 return
             if record.get("phase") != "active":
                 raise RuntimeError("Terraform stack retained for explicit recovery")
+            if self.retain is not None:
+                record["phase"] = "checking_release"
+                _write(path, record)
             reason = self.retain() if self.retain else None
             if reason:
                 record["phase"] = "retained"

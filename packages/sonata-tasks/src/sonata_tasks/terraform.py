@@ -99,6 +99,11 @@ class TerraformSpec:
             if not path.is_file():
                 raise ValueError(f"Terraform input is missing: {name}")
             hashes[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+        if config := self.env.get("TF_CLI_CONFIG_FILE"):
+            path = Path(config).expanduser()
+            if not path.is_absolute() or not path.is_file():
+                raise ValueError("Terraform CLI configuration must be an absolute file")
+            hashes["@cli-config"] = hashlib.sha256(path.read_bytes()).hexdigest()
         return fingerprint_digest(hashes)
 
     def verify(self) -> None:
@@ -155,13 +160,18 @@ def _environment(spec: TerraformSpec) -> dict[str, str]:
     effective = {**os.environ, **spec.env}
     for key, value in effective.items():
         if value and (
-            key == "TF_DATA_DIR"
+            (
+                (key.startswith("TF_VAR_") or key == "TF_CLI_CONFIG_FILE")
+                and key not in spec.env
+            )
+            or key == "TF_DATA_DIR"
             or key.startswith("TF_CLI_ARGS")
             or (key == "TF_WORKSPACE" and value != "default")
         ):
             raise ValueError(f"Terraform state/command override is unsupported: {key}")
     return {
         **spec.env,
+        "TF_CLI_CONFIG_FILE": spec.env.get("TF_CLI_CONFIG_FILE") or os.devnull,
         "TF_INPUT": "0",
         "TF_IN_AUTOMATION": "1",
         "TF_WORKSPACE": "default",

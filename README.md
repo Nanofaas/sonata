@@ -453,3 +453,10 @@ output: output JSON can include sensitive values.
 
 Parallelism defaults to one because Multipass 1.17 on the target ARM64 host has
 known concurrent launch failures; other stacks may explicitly increase it.
+
+Terraform variable environment inputs must be explicit in `TerraformSpec.env`;
+undeclared inherited `TF_VAR_*` and `TF_CLI_CONFIG_FILE` are rejected. An explicit
+CLI configuration path must be absolute and its bytes are hashed and checked with
+the module inputs. Without one, the CLI uses an empty configuration (`/dev/null`),
+so user-home provider overrides cannot silently alter a frozen stack. Provider
+credentials can still use their ordinary environment variables.

@@ -47,3 +47,25 @@ def test_real_owned_stack_lifecycle(tmp_path, binary, fail):
         resource.release.run(inputs)
     state = json.loads((tmp_path / "terraform.tfstate").read_text())
     assert state["resources"] == []
+
+
+def test_real_custom_local_backend_refused_before_apply(tmp_path):
+    executable = shutil.which("tofu")
+    if executable is None:
+        pytest.skip("tofu is not installed")
+    outside = tmp_path.parent / (tmp_path.name + "-external.tfstate")
+    (tmp_path / "main.tf").write_text(
+        'terraform {\n backend "local" {\n path = '
+        + json.dumps(str(outside))
+        + "\n}\n}\n"
+        'resource "terraform_data" "example" { input = "must-not-apply" }\n'
+    )
+    spec = TerraformSpec(
+        tmp_path, owner="backend-test", inputs=("main.tf",), binary=executable
+    )
+    resource = terraform_stack_resource(spec, executor=LocalCommandTaskExecutor())
+    with pytest.raises(RuntimeError, match="local backend"):
+        resource.acquire.run(TaskInputs.empty())
+    assert not outside.exists()
+    assert not (tmp_path / "terraform.tfstate").exists()
+    assert not list((tmp_path / ".sonata-terraform").glob("apply-*.log"))
